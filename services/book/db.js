@@ -53,7 +53,7 @@ async function createBookDatabase() {
     ['Khởi nghiệp tinh gọn', '/assets/covers/khoi-nghiep-tinh-gon.jpg']
   ];
   for (const [title, coverUrl] of seedCovers) {
-    await db.run('UPDATE books SET cover_url = ? WHERE title = ? AND (cover_url IS NULL OR cover_url = "")', [coverUrl, title]);
+    await db.run("UPDATE books SET cover_url = ? WHERE title = ? AND (cover_url IS NULL OR cover_url = '')", [coverUrl, title]);
   }
   return db;
 }
