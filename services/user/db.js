@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
-const { openDatabase } = require('../lib/db');
-const config = require('../lib/config');
+const { openDatabase } = require('../../shared/db');
+const config = require('../../shared/config');
 
 async function createUserDatabase() {
   const db = openDatabase(config.dbPath('user-service'));

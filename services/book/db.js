@@ -1,5 +1,5 @@
-const { openDatabase } = require('../lib/db');
-const config = require('../lib/config');
+const { openDatabase } = require('../../shared/db');
+const config = require('../../shared/config');
 
 const seedBooks = [
   ['Clean Code', 'Robert C. Martin', 'Công nghệ', 5, 5],

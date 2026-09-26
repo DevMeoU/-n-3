@@ -1,5 +1,5 @@
-const { openDatabase } = require('../lib/db');
-const config = require('../lib/config');
+const { openDatabase } = require('../../shared/db');
+const config = require('../../shared/config');
 
 async function createBorrowDatabase() {
   const db = openDatabase(config.dbPath('borrow-service'));

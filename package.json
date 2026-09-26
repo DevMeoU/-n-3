@@ -7,9 +7,14 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node start.js",
-    "dev": "node start.js",
-    "test": "node tests/integration.test.js"
+    "start": "node scripts/start.js",
+    "dev": "node scripts/start.js",
+    "stop": "node scripts/stop.js",
+    "test": "node tests/integration.test.js",
+    "gateway": "node gateway/index.js",
+    "service:user": "node services/user/index.js",
+    "service:book": "node services/book/index.js",
+    "service:borrow": "node services/borrow/index.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

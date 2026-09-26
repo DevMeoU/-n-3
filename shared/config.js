@@ -5,7 +5,8 @@ const isTest = process.env.NODE_ENV === 'test';
 
 const config = {
   rootDir,
-  dataDir: path.join(rootDir, 'data'),
+  // Đổi thư mục SQLite qua env DATA_DIR khi deploy (vd: /data trên ổ persistent)
+  dataDir: process.env.DATA_DIR || path.join(rootDir, 'data'),
   isTest,
   gatewayPort: Number(process.env.PORT || process.env.GATEWAY_PORT || (isTest ? 4100 : 3000)),
   userServicePort: Number(process.env.USER_SERVICE_PORT || (isTest ? 4101 : 3001)),

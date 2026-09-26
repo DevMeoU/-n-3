@@ -20,7 +20,7 @@ const env = {
   JWT_SECRET: 'test-secret',
   INTERNAL_SERVICE_SECRET: 'test-internal-secret'
 };
-const files = ['services/user-service.js', 'services/book-service.js', 'services/borrow-service.js', 'gateway.js'];
+const files = ['services/user/index.js', 'services/book/index.js', 'services/borrow/index.js', 'gateway/index.js'];
 const children = files.map((file) => spawn(process.execPath, [path.join(root, file)], { env, stdio: 'ignore' }));
 
 function call(method, requestPath, body, token) {
@@ -99,11 +99,37 @@ async function login(username, password = '123456') {
       expect(r.status === 403, 'Reader đã xem được users');
     });
     const username = `qa_${Date.now()}`;
+    let qaUserId;
     await test('Admin tạo tài khoản và trùng username lỗi', async () => {
       const created = await call('POST', '/api/users', { fullName: 'Tài khoản QA', username, password: '123456', role: 'READER' }, admin.token);
       expect(created.status === 201 && !created.data.passwordHash, 'Admin không tạo được user');
+      qaUserId = created.data.id;
       const duplicate = await call('POST', '/api/users', { fullName: 'Tài khoản QA', username, password: '123456', role: 'READER' }, admin.token);
       expect(duplicate.status === 409, 'Trùng username phải lỗi');
+    });
+    await test('Admin sửa tài khoản (đổi tên + vai trò)', async () => {
+      const r = await call('PUT', `/api/users/${qaUserId}`, { fullName: 'Tài khoản QA Sửa', role: 'LIBRARIAN' }, admin.token);
+      expect(r.status === 200 && r.data.fullName === 'Tài khoản QA Sửa' && r.data.role === 'LIBRARIAN', 'Không sửa được user');
+      const badRole = await call('PUT', `/api/users/${qaUserId}`, { role: 'SUPER' }, admin.token);
+      expect(badRole.status === 400, 'Role sai phải lỗi 400');
+      const rename = await call('PUT', `/api/users/${qaUserId}`, { username: 'doi_ten' }, admin.token);
+      expect(rename.status === 400, 'Đổi username phải bị chặn');
+    });
+    await test('Admin không tự đổi vai trò / tự xóa / xóa admin cuối', async () => {
+      const selfRole = await call('PUT', '/api/users/3', { role: 'READER' }, admin.token);
+      expect(selfRole.status === 403, 'Tự đổi vai trò phải bị chặn');
+      const selfDel = await call('DELETE', '/api/users/3', undefined, admin.token);
+      expect(selfDel.status === 403, 'Tự xóa phải bị chặn');
+      const lastAdmin = await call('DELETE', '/api/users/3', undefined, admin.token);
+      expect(lastAdmin.status === 403 || lastAdmin.status === 409, 'Xóa admin cuối phải bị chặn');
+    });
+    await test('Admin xóa tài khoản và tài khoản đó hết đăng nhập được', async () => {
+      const r = await call('DELETE', `/api/users/${qaUserId}`, undefined, admin.token);
+      expect(r.status === 200, 'Không xóa được user');
+      const gone = await call('DELETE', `/api/users/${qaUserId}`, undefined, admin.token);
+      expect(gone.status === 404, 'Xóa lần hai phải 404');
+      const login = await call('POST', '/api/auth/login', { username, password: '123456' });
+      expect(login.status === 401, 'User đã xóa vẫn đăng nhập được');
     });
 
     let borrowId;

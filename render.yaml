@@ -2,12 +2,13 @@ services:
   - type: web
     name: library-microservices-demo
     runtime: node
+    plan: free # Bắt buộc: không ghi dòng này Render mặc định gói Starter trả phí -> đòi thẻ
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /
     envVars:
       - key: NODE_VERSION
-        value: 20
+        value: "20"
       - key: JWT_SECRET
         generateValue: true
       - key: INTERNAL_SERVICE_SECRET

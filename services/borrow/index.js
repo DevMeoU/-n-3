@@ -1,7 +1,7 @@
 const express = require('express');
-const { createBorrowDatabase } = require('./borrow-db');
-const { requireRoles } = require('../lib/auth');
-const config = require('../lib/config');
+const { createBorrowDatabase } = require('./db');
+const { requireRoles } = require('../../shared/auth');
+const config = require('../../shared/config');
 
 const app = express();
 app.use(express.json({ limit: '32kb' }));

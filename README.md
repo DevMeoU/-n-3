@@ -64,7 +64,7 @@ Test tự khởi động 4 tiến trình tại cổng `4100–4103`, tạo datab
 | `POST /api/auth/login` | Public |
 | `GET /api/books`, `GET /api/books/:id` | READER, LIBRARIAN, ADMIN |
 | `POST/PUT /api/books` | LIBRARIAN, ADMIN |
-| `GET/POST /api/users` | ADMIN |
+| `GET/POST /api/users`, `PUT/DELETE /api/users/:id` | ADMIN (không tự đổi vai trò/tự xóa, giữ ≥1 admin) |
 | `POST /api/borrows`, `GET /api/borrows/my`, `POST /api/borrows/:id/cancel` | READER, owner-only khi hủy |
 | `GET /api/borrows`, `POST /api/borrows/:id/approve|reject|return` | LIBRARIAN, ADMIN |
 
@@ -107,15 +107,33 @@ Repository có `render.yaml` cho **một Render Web Service**. Cách này phù h
 ## Cấu trúc
 
 ```text
-├─ gateway.js                 # API Gateway, JWT/RBAC/proxy/static SPA
+├─ gateway/index.js            # API Gateway: JWT/RBAC/proxy + static SPA
 ├─ services/
-│  ├─ user-service.js         # login, tài khoản, bcrypt/JWT
-│  ├─ book-service.js         # danh mục, tồn kho, reserve/release
-│  ├─ borrow-service.js       # state machine phiếu mượn
-│  └─ *-db.js                 # schema + seed SQLite
-├─ lib/                       # config, database wrapper, auth helper
-├─ frontend/                  # SPA Tailwind CDN
-├─ tests/integration.test.js  # 13 test tự động
-├─ diagrams/                  # Mermaid kiến trúc, ERD, state, sequence
-└─ render.yaml                # Blueprint deploy Render
+│  ├─ user/index.js + db.js    # login, tài khoản, bcrypt/JWT
+│  ├─ book/index.js + db.js    # danh mục, tồn kho, reserve/release
+│  └─ borrow/index.js + db.js  # state machine phiếu mượn
+├─ shared/                     # config, database wrapper, auth helper
+├─ frontend/
+│  ├─ index.html               # SPA shell (Tailwind CDN)
+│  ├─ css/style.css            # custom CSS bổ trợ Tailwind
+│  └─ js/
+│     ├─ app.js                # entry + hash router
+│     ├─ store.js              # state + roles/labels
+│     ├─ api.js                # fetch qua Gateway
+│     ├─ ui.js                 # toast/modal/badge/layout
+│     └─ views/                # login, books, borrows, users
+├─ scripts/start.js            # chạy 4 tiến trình local
+├─ tests/integration.test.js   # 13 test tự động
+├─ docs/diagrams/              # Mermaid kiến trúc, ERD, state, sequence
+├─ data/                       # SQLite local (gitignored)
+└─ render.yaml                 # Blueprint deploy Render
+```
+
+Chạy lẻ từng service khi debug:
+
+```powershell
+npm run service:user
+npm run service:book
+npm run service:borrow
+npm run gateway
 ```

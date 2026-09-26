@@ -1,12 +1,12 @@
 const express = require('express');
 const path = require('path');
-const config = require('./lib/config');
-const { verifyToken } = require('./lib/auth');
+const config = require('../shared/config');
+const { verifyToken } = require('../shared/auth');
 
 const app = express();
 app.use(express.json({ limit: '32kb' }));
-app.use('/assets', express.static(path.join(__dirname, 'frontend')));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'frontend', 'index.html')));
+app.use('/assets', express.static(path.join(__dirname, '..', 'frontend')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
 
 const routes = [
   { prefix: '/api/auth', port: () => config.userServicePort, public: true, rewrite: (url) => url.replace('/api/auth', '') },
