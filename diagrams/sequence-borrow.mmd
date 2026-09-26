@@ -1,0 +1,14 @@
+sequenceDiagram
+  actor Reader as Độc giả
+  participant UI as Frontend
+  participant Gateway as API Gateway
+  participant Borrow as Borrow Service
+  participant Book as Book Service
+  Reader->>UI: Chọn mượn sách
+  UI->>Gateway: POST /api/borrows + JWT
+  Gateway->>Borrow: POST /borrows + x-user-*
+  Borrow->>Book: GET /books/:id
+  Book-->>Borrow: Thông tin sách
+  Borrow-->>Gateway: 201 PENDING
+  Gateway-->>UI: Phiếu chờ duyệt
+  Note over Borrow,Book: Khi thủ thư duyệt\nBorrow gọi POST /books/:id/reserve

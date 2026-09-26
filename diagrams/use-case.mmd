@@ -1,0 +1,17 @@
+flowchart LR
+  Reader[Độc giả] --> Login[Đăng nhập]
+  Reader --> Search[Tìm kiếm / xem sách]
+  Reader --> Request[Tạo yêu cầu mượn]
+  Reader --> MyHistory[Xem phiếu của mình]
+  Reader --> Cancel[Hủy phiếu PENDING]
+  Librarian[Thủ thư] --> Manage[Thêm / sửa sách]
+  Librarian --> Queue[Xem hàng đợi]
+  Librarian --> Approve[Duyệt phiếu]
+  Librarian --> Reject[Từ chối phiếu]
+  Librarian --> Return[Xác nhận trả]
+  Admin[Quản trị viên] --> Accounts[Xem / tạo tài khoản]
+  Admin --> Manage
+  Admin --> Queue
+  Admin --> Approve
+  Admin --> Reject
+  Admin --> Return

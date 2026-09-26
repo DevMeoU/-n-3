@@ -1,0 +1,8 @@
+stateDiagram-v2
+  [*] --> PENDING: Reader tạo yêu cầu
+  PENDING --> BORROWING: Librarian/Admin duyệt\nreserve thành công
+  PENDING --> REJECTED: Librarian/Admin từ chối
+  PENDING --> REJECTED: Reader hủy yêu cầu
+  BORROWING --> RETURNED: Librarian/Admin xác nhận trả\nrelease thành công
+  REJECTED --> [*]
+  RETURNED --> [*]

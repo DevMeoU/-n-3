@@ -1,0 +1,20 @@
+{
+  "name": "library-microservices-demo",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Demo hệ thống quản lý thư viện theo kiến trúc microservices",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node start.js",
+    "dev": "node start.js",
+    "test": "node tests/integration.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite3": "^5.1.7"
+  }
+}

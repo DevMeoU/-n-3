@@ -1,0 +1,9 @@
+flowchart TB
+  UI[Frontend SPA<br/>HTML + Tailwind CDN] -->|HTTPS /api| G[API Gateway<br/>JWT + RBAC + Proxy]
+  G --> U[User Service<br/>Express]
+  G --> B[Book Service<br/>Express]
+  G --> R[Borrow Service<br/>Express]
+  U --> UDB[(user-service.db<br/>SQLite)]
+  B --> BDB[(book-service.db<br/>SQLite)]
+  R --> RDB[(borrow-service.db<br/>SQLite)]
+  R -->|GET book<br/>POST reserve/release| B

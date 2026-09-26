@@ -1,0 +1,33 @@
+erDiagram
+  USERS {
+    INTEGER id PK
+    TEXT full_name
+    TEXT username UK
+    TEXT password_hash
+    TEXT role
+    TEXT created_at
+  }
+  BOOKS {
+    INTEGER id PK
+    TEXT title
+    TEXT author
+    TEXT category
+    INTEGER quantity
+    INTEGER available
+    TEXT created_at
+  }
+  BORROW_RECORDS {
+    INTEGER id PK
+    INTEGER user_id "logical reference"
+    TEXT user_name
+    INTEGER book_id "logical reference"
+    TEXT book_title
+    TEXT request_date
+    TEXT approved_date
+    TEXT due_date
+    TEXT return_date
+    TEXT status
+    TEXT reject_reason
+  }
+  USERS ||--o{ BORROW_RECORDS : "logical 1-N"
+  BOOKS ||--o{ BORROW_RECORDS : "logical 1-N"
