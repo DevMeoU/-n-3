@@ -24,11 +24,14 @@ export function payLink(record, base) {
 
 export function qrSvg(link) {
   try {
+    if (typeof window.qrcode !== 'function') throw new Error('thieu lib QR: hard refresh Ctrl+Shift+R');
     const qr = window.qrcode(0, 'M');
     qr.addData(link);
     qr.make();
-    return qr.createSvgTag({ cellSize: 5, margin: 8, scalable: true });
-  } catch {
+    // Kích thước cố định (không dùng scalable) để SVG luôn hiện đúng cỡ
+    return qr.createSvgTag(6, 4);
+  } catch (e) {
+    console.error('QR error:', e);
     return '';
   }
 }
@@ -66,7 +69,8 @@ export function paymentModal(record) {
       if (!document.body.contains($('#pay-qr'))) return;
       link = payLink(record, base);
       $('#pay-link').value = link;
-      $('#pay-qr').innerHTML = qrSvg(link) || '<p class="text-sm text-slate-500">Không tạo được QR, dùng link bên dưới.</p>';
+      const svg = qrSvg(link);
+      $('#pay-qr').innerHTML = svg || '<p class="text-sm text-rose-600">Không vẽ được QR — xem lỗi trong Console (F12), hoặc bấm Copy để copy link.</p>';
     });
     $('#pay-copy').onclick = async () => {
       try {

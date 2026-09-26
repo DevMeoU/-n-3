@@ -81,7 +81,7 @@ export function invoiceModal(record) {
       payBase().then((base) => {
         if (!document.body.contains(qrBox)) return;
         const link = payLink(record, base);
-        qrBox.innerHTML = qrSvg(link) || '';
+        qrBox.innerHTML = qrSvg(link) || '<p class="text-sm text-rose-600">Không vẽ được QR — xem Console (F12).</p>';
         const linkText = qrBox.nextElementSibling;
         if (linkText) linkText.textContent = link;
       });
