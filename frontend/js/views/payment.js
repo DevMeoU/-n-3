@@ -96,13 +96,15 @@ export function paymentModal(record) {
         }
       };
     }
-    // Poll: độc giả quét + bấm thanh toán xong thì modal tự báo
+    // Poll: độc giả quét + bấm thanh toán xong thì modal tự báo.
+    // Phiếu đang mượn xong khi paidRental, phiếu đã trả xong khi paid.
     const timer = setInterval(async () => {
       if (!document.body.contains($('#pay-status'))) return clearInterval(timer);
       try {
         const res = await fetch(`/api/pay/${record.id}?t=${encodeURIComponent(record.payToken)}`);
         const bill = await res.json();
-        if (bill.paid) {
+        const done = record.status === 'BORROWING' ? bill.paidRental : bill.paid;
+        if (done) {
           clearInterval(timer);
           $('#pay-status').innerHTML = '<span class="font-bold text-emerald-700">✓ Đã thanh toán thành công!</span>';
           setTimeout(() => { closeModal(); borrowsView(window.__router); }, 1500);
