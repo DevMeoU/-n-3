@@ -94,6 +94,22 @@ async function login(username, password = '123456') {
       const r = await call('POST', '/api/books', { title: 'Sai dữ liệu', author: 'QA', category: 'Test', quantity: 0 }, librarian.token);
       expect(r.status === 400, 'Quantity 0 phải lỗi');
     });
+    const png1x1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    await test('Upload ảnh bìa sách (thủ thư)', async () => {
+      const r = await call('POST', `/api/books/${bookId}/cover`, { image: png1x1 }, librarian.token);
+      expect(r.status === 200 && r.data.cover_url === `/assets/covers/book-${bookId}.png`, `Không upload được ảnh: ${JSON.stringify(r.data)}`);
+      const file = path.join(root, 'frontend', 'covers', `book-${bookId}.png`);
+      expect(fs.existsSync(file), 'File ảnh không được lưu');
+      const badType = await call('POST', `/api/books/${bookId}/cover`, { image: 'data:image/png;base64,eHh4eA==' }, librarian.token);
+      expect(badType.status === 400, 'Ảnh rởm phải lỗi 400');
+      const forbidden = await call('POST', `/api/books/${bookId}/cover`, { image: png1x1 }, reader.token);
+      expect(forbidden.status === 403, 'Reader upload được ảnh');
+      const missing = await call('POST', '/api/books/999999/cover', { image: png1x1 }, librarian.token);
+      expect(missing.status === 404, 'Upload sách không tồn tại phải 404');
+      const del = await call('DELETE', `/api/books/${bookId}/cover`, undefined, librarian.token);
+      expect(del.status === 200 && !del.data.cover_url, 'Không gỡ được ảnh');
+      expect(!fs.existsSync(file), 'File ảnh không được xóa');
+    });
     await test('Reader không xem danh sách tài khoản', async () => {
       const r = await call('GET', '/api/users', undefined, reader.token);
       expect(r.status === 403, 'Reader đã xem được users');

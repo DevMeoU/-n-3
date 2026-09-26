@@ -64,6 +64,7 @@ Test tự khởi động 4 tiến trình tại cổng `4100–4103`, tạo datab
 | `POST /api/auth/login` | Public |
 | `GET /api/books`, `GET /api/books/:id` | READER, LIBRARIAN, ADMIN |
 | `POST/PUT /api/books` | LIBRARIAN, ADMIN |
+| `POST/DELETE /api/books/:id/cover` | LIBRARIAN, ADMIN (upload JSON `{image: dataURL JPG/PNG/WebP ≤2MB}`, file lưu `frontend/covers/book-<id>.<ext>`) |
 | `GET/POST /api/users`, `PUT/DELETE /api/users/:id` | ADMIN (không tự đổi vai trò/tự xóa, giữ ≥1 admin) |
 | `POST /api/borrows`, `GET /api/borrows/my`, `POST /api/borrows/:id/cancel` | READER, owner-only khi hủy |
 | `GET /api/borrows`, `POST /api/borrows/:id/approve|reject|return` | LIBRARIAN, ADMIN |

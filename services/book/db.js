@@ -24,6 +24,7 @@ async function createBookDatabase() {
       category TEXT NOT NULL DEFAULT 'Khác',
       quantity INTEGER NOT NULL CHECK (quantity > 0),
       available INTEGER NOT NULL CHECK (available BETWEEN 0 AND quantity),
+      cover_url TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -31,11 +32,27 @@ async function createBookDatabase() {
     CREATE INDEX IF NOT EXISTS idx_books_author ON books(author);
     CREATE INDEX IF NOT EXISTS idx_books_category ON books(category);
   `);
+  // Migration cho DB cũ (tạo trước khi có ảnh bìa)
+  const columns = await db.all('PRAGMA table_info(books)');
+  if (!columns.some((col) => col.name === 'cover_url')) {
+    await db.exec('ALTER TABLE books ADD COLUMN cover_url TEXT');
+  }
   const count = await db.get('SELECT COUNT(*) AS count FROM books');
   if (count.count === 0) {
     for (const book of seedBooks) {
       await db.run('INSERT INTO books (title, author, category, quantity, available) VALUES (?, ?, ?, ?, ?)', book);
     }
+  }
+  // Gắn ảnh bìa mẫu (file ship kèm repo trong frontend/covers/)
+  const seedCovers = [
+    ['Clean Code', '/assets/covers/clean-code.jpg'],
+    ['Đắc nhân tâm', '/assets/covers/dac-nhan-tam.jpg'],
+    ['Nhà giả kim', '/assets/covers/nha-gia-kim.jpg'],
+    ['Tư duy nhanh và chậm', '/assets/covers/tu-duy-nhanh-va-cham.jpg'],
+    ['Khởi nghiệp tinh gọn', '/assets/covers/khoi-nghiep-tinh-gon.jpg']
+  ];
+  for (const [title, coverUrl] of seedCovers) {
+    await db.run('UPDATE books SET cover_url = ? WHERE title = ? AND (cover_url IS NULL OR cover_url = "")', [coverUrl, title]);
   }
   return db;
 }

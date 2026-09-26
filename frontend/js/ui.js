@@ -72,10 +72,12 @@ export function coverFor(book = {}) {
   return `/assets/covers/${slug}.${ext}`;
 }
 
-// <img> bìa có fallback về default.svg khi thiếu file
+// <img> bìa: ưu tiên ảnh upload (book.cover_url), rồi bìa theo thể loại,
+// cuối cùng default.svg khi thiếu file
 export function coverImg(book = {}, cls = 'book-cover') {
   const title = esc(book.title || 'Bìa sách');
-  return `<img src="${coverFor(book)}" alt="${title}" loading="lazy"
+  const src = book.cover_url || coverFor(book);
+  return `<img src="${src}" alt="${title}" loading="lazy"
     class="${cls}" onerror="this.onerror=null;this.src='/assets/covers/default.svg';">`;
 }
 

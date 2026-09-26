@@ -4,14 +4,16 @@ const config = require('../shared/config');
 const { verifyToken } = require('../shared/auth');
 
 const app = express();
-app.use(express.json({ limit: '32kb' }));
+// Nới 3mb để body ảnh bìa base64 (~2.7MB) đi qua được; các service vẫn giữ limit riêng
+app.use(express.json({ limit: '3mb' }));
 app.use('/assets', express.static(path.join(__dirname, '..', 'frontend')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
 
 const routes = [
   { prefix: '/api/auth', port: () => config.userServicePort, public: true, rewrite: (url) => url.replace('/api/auth', '') },
   { prefix: '/api/users', port: () => config.userServicePort, roles: ['ADMIN'] },
-  { prefix: '/api/books', port: () => config.bookServicePort, roles: ['READER', 'LIBRARIAN', 'ADMIN'], methodRoles: { POST: ['LIBRARIAN', 'ADMIN'], PUT: ['LIBRARIAN', 'ADMIN'], DELETE: ['ADMIN'] } },
+  // DELETE /api/books chỉ có endpoint gỡ ảnh bìa nên mở cho thủ thư (book-service không có xóa sách)
+  { prefix: '/api/books', port: () => config.bookServicePort, roles: ['READER', 'LIBRARIAN', 'ADMIN'], methodRoles: { POST: ['LIBRARIAN', 'ADMIN'], PUT: ['LIBRARIAN', 'ADMIN'], DELETE: ['LIBRARIAN', 'ADMIN'] } },
   { prefix: '/api/borrows', port: () => config.borrowServicePort, roles: ['READER', 'LIBRARIAN', 'ADMIN'] }
 ];
 
@@ -66,6 +68,7 @@ app.use('/api', async (req, res) => {
 });
 
 app.use((error, req, res, next) => {
+  if (error.type === 'entity.too.large') return res.status(413).json({ error: 'Dữ liệu gửi lên vượt quá 3MB' });
   if (error instanceof SyntaxError) return res.status(400).json({ error: 'Dữ liệu JSON không hợp lệ' });
   console.error('Gateway error:', error.message);
   return res.status(500).json({ error: 'API Gateway gặp lỗi nội bộ' });

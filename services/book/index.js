@@ -1,16 +1,50 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const { createBookDatabase } = require('./db');
 const { requireRoles } = require('../../shared/auth');
 const config = require('../../shared/config');
 
 const app = express();
-app.use(express.json({ limit: '32kb' }));
+
+// Ảnh bìa: client gửi base64-JSON { image: 'data:image/jpeg;base64,...' }
+// (giữ JSON để đi qua Gateway không cần parse multipart), file thật lưu
+// tại frontend/covers/ và phục vụ qua /assets/covers/ có sẵn.
+const coversDir = path.join(config.rootDir, 'frontend', 'covers');
+fs.mkdirSync(coversDir, { recursive: true });
+const COVER_LIMIT = 2 * 1024 * 1024; // 2MB file thật
+
+function parseCoverImage(dataUrl) {
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(
+    typeof dataUrl === 'string' ? dataUrl.trim() : ''
+  );
+  if (!match) return { error: 'Ảnh bìa phải là file JPG/PNG/WebP' };
+  const mime = match[1];
+  const buf = Buffer.from(match[2], 'base64');
+  if (!buf.length || buf.length > COVER_LIMIT) return { error: 'Ảnh bìa vượt quá 2MB' };
+  const valid =
+    (mime === 'image/jpeg' && buf[0] === 0xff && buf[1] === 0xd8) ||
+    (mime === 'image/png' && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) ||
+    (mime === 'image/webp' && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP');
+  if (!valid) return { error: 'File ảnh không hợp lệ' };
+  const ext = mime === 'image/jpeg' ? 'jpg' : mime === 'image/png' ? 'png' : 'webp';
+  return { value: { buf, ext } };
+}
+
+function removeCoverFile(coverUrl) {
+  if (!coverUrl) return;
+  const name = path.basename(coverUrl);
+  // Chỉ xóa file do hệ thống đặt tên (book-<id>.<ext>), không đụng ảnh seed/bìa thể loại
+  if (!/^book-\d+\.(jpg|png|webp)$/.test(name)) return;
+  try { fs.unlinkSync(path.join(coversDir, name)); } catch { /* file đã mất thì thôi */ }
+}
 
 const roleStaff = ['LIBRARIAN', 'ADMIN'];
 const clean = (value) => typeof value === 'string' ? value.trim() : '';
 const validId = (value) => Number.isInteger(Number(value)) && Number(value) > 0;
 
 function validateBook(body, isUpdate = false) {
+  if (body && body.cover_url !== undefined) return { error: 'Ảnh bìa dùng endpoint POST /books/:id/cover' };
   const result = {};
   for (const field of ['title', 'author', 'category']) {
     if (body[field] !== undefined) {
@@ -35,6 +69,44 @@ function isInternalRequest(req) {
 
 async function start() {
   const db = await createBookDatabase();
+
+  // Route upload ảnh bìa: parser JSON riêng 3mb, đăng ký TRƯỚC json toàn cục
+  // để body ảnh lớn không bị chặn ở limit 32kb
+  app.post('/books/:id/cover', express.json({ limit: '3mb' }), async (req, res, next) => {
+    if (!requireRoles(req, res, roleStaff)) return;
+    try {
+      if (!validId(req.params.id)) return res.status(400).json({ error: 'Mã sách không hợp lệ' });
+      const id = Number(req.params.id);
+      const book = await db.get('SELECT * FROM books WHERE id = ?', [id]);
+      if (!book) return res.status(404).json({ error: 'Không tìm thấy sách' });
+      const parsed = parseCoverImage(req.body && req.body.image);
+      if (parsed.error) {
+        return res.status(parsed.error.includes('2MB') ? 413 : 400).json({ error: parsed.error });
+      }
+      const fileName = `book-${id}.${parsed.value.ext}`;
+      if (book.cover_url && path.basename(book.cover_url) !== fileName) removeCoverFile(book.cover_url);
+      fs.writeFileSync(path.join(coversDir, fileName), parsed.value.buf);
+      await db.run('UPDATE books SET cover_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [`/assets/covers/${fileName}`, id]);
+      res.json(await db.get('SELECT * FROM books WHERE id = ?', [id]));
+    } catch (error) { next(error); }
+  });
+
+  app.delete('/books/:id/cover', async (req, res, next) => {
+    if (!requireRoles(req, res, roleStaff)) return;
+    try {
+      if (!validId(req.params.id)) return res.status(400).json({ error: 'Mã sách không hợp lệ' });
+      const id = Number(req.params.id);
+      const book = await db.get('SELECT * FROM books WHERE id = ?', [id]);
+      if (!book) return res.status(404).json({ error: 'Không tìm thấy sách' });
+      if (book.cover_url) {
+        removeCoverFile(book.cover_url);
+        await db.run('UPDATE books SET cover_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [id]);
+      }
+      res.json(await db.get('SELECT * FROM books WHERE id = ?', [id]));
+    } catch (error) { next(error); }
+  });
+
+  app.use(express.json({ limit: '32kb' }));
 
   app.get('/books', async (req, res, next) => {
     const identity = isInternalRequest(req) || requireRoles(req, res, ['READER', 'LIBRARIAN', 'ADMIN']);
@@ -120,6 +192,7 @@ async function start() {
   });
 
   app.use((error, req, res, next) => {
+    if (error.type === 'entity.too.large') return res.status(413).json({ error: 'Ảnh bìa vượt quá 2MB' });
     console.error('Book Service error:', error.message);
     res.status(500).json({ error: 'Book Service gặp lỗi nội bộ' });
   });
