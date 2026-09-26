@@ -1,6 +1,6 @@
-// views/invoice.js — lập & in hóa đơn phí mượn/trả (thuần frontend, dùng dữ liệu phiếu)
+// views/invoice.js — lập & in hóa đơn phí mượn/trả (thuần chứng từ, không thu tiền ở đây).
+// Thu tiền làm ở modal QR / nút Thu tiền mặt ngoài bảng phiếu.
 import { $, esc, fmt, fmtVND, showModal, toast } from '../ui.js';
-import { payLink, payBase, qrSvg } from './payment.js';
 
 const DAY = 86400000;
 
@@ -21,7 +21,9 @@ export function invoiceModal(record) {
   const rental = Number(r.rentalFee) || 0;
   const late = Number(r.lateFee) || 0;
   const days = lateDaysOf(r);
-  const total = rental + late;
+  const prepaid = r.paidRental ? rental : 0;
+  const due = rental + late - prepaid;
+  const settled = r.paid || due === 0;
   const no = invoiceNo(r);
   const html = `
     <div id="invoice-doc" class="text-sm text-slate-900">
@@ -51,16 +53,12 @@ export function invoiceModal(record) {
         <tbody>
           <tr><td class="border border-slate-300 px-3 py-2">Tiền mượn sách</td><td class="border border-slate-300 px-3 py-2 text-right">${fmtVND(rental)}</td></tr>
           <tr><td class="border border-slate-300 px-3 py-2">Phạt quá hạn${days > 0 ? ` (${days} ngày)` : ' (đúng hạn)'}</td><td class="border border-slate-300 px-3 py-2 text-right">${fmtVND(late)}</td></tr>
-          <tr><td class="border border-slate-300 px-3 py-2 font-bold">Tổng thanh toán</td><td class="border border-slate-300 px-3 py-2 text-right font-bold">${fmtVND(total)}</td></tr>
+          ${prepaid > 0 ? `<tr><td class="border border-slate-300 px-3 py-2">Đã thu trước</td><td class="border border-slate-300 px-3 py-2 text-right">−${fmtVND(prepaid)}</td></tr>` : ''}
+          <tr><td class="border border-slate-300 px-3 py-2 font-bold">Còn phải thu</td><td class="border border-slate-300 px-3 py-2 text-right font-bold">${fmtVND(due)}</td></tr>
         </tbody>
       </table>
-      <p class="mt-2">Trạng thái: <b id="invoice-status" class="${r.paid ? 'text-emerald-700' : 'text-amber-700'}">${r.paid ? 'ĐÃ THANH TOÁN' : 'CHƯA THANH TOÁN'}</b></p>
-      ${!r.paid && r.payToken && total > 0 ? `
-      <div class="mt-3 rounded-lg bg-slate-50 p-3 text-center">
-        <p class="text-sm font-medium">Quét mã để thanh toán bằng điện thoại</p>
-        <div id="invoice-qr" class="mx-auto mt-2 w-fit rounded-lg border border-slate-200 bg-white p-2"></div>
-        <p class="mt-1 break-all text-xs text-slate-500">${esc(payLink(r))}</p>
-      </div>` : ''}
+      <p class="mt-2">Trạng thái: <b class="${settled ? 'text-emerald-700' : 'text-amber-700'}">${settled ? 'ĐÃ THANH TOÁN' : 'CHƯA THANH TOÁN'}</b></p>
+      ${!settled ? `<p class="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Hóa đơn này còn dư nợ ${fmtVND(due)}. Thu tiền ở nút <b>QR thu tiền</b> / <b>Thu tiền mặt</b> ngoài bảng phiếu.</p>` : ''}
       <div class="mt-6 grid grid-cols-2 text-center">
         <div><p class="text-slate-500">Độc giả</p><p class="mt-10 text-sm text-slate-400">(Ký, ghi rõ họ tên)</p></div>
         <div><p class="text-slate-500">Thủ thư</p><p class="mt-10 text-sm text-slate-400">(Ký, ghi rõ họ tên)</p></div>
@@ -76,33 +74,6 @@ export function invoiceModal(record) {
       <button data-close class="rounded-lg border border-slate-300 px-4 py-2">Đóng</button>
       <button id="invoice-print" class="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">In hóa đơn</button>
     </div>`, () => {
-    // Poll: bên kia quét QR thanh toán xong thì hóa đơn tự đổi trạng thái
-    if (!r.paid && r.payToken && total > 0) {
-      const timer = setInterval(async () => {
-        const statusEl = $('#invoice-status');
-        if (!document.body.contains(statusEl)) return clearInterval(timer);
-        try {
-          const res = await fetch(`/api/pay/${r.id}?t=${encodeURIComponent(r.payToken)}`);
-          const bill = await res.json();
-          if (bill.paid) {
-            clearInterval(timer);
-            statusEl.textContent = 'ĐÃ THANH TOÁN';
-            statusEl.className = 'text-emerald-700';
-            toast('Phiếu này vừa được thanh toán');
-          }
-        } catch { /* thử lại kỳ sau */ }
-      }, 3000);
-    }
-    const qrBox = $('#invoice-qr');
-    if (qrBox) {
-      payBase().then((base) => {
-        if (!document.body.contains(qrBox)) return;
-        const link = payLink(record, base);
-        qrBox.innerHTML = qrSvg(link) || '<p class="text-sm text-rose-600">Không vẽ được QR — xem Console (F12).</p>';
-        const linkText = qrBox.nextElementSibling;
-        if (linkText) linkText.textContent = link;
-      });
-    }
     $('#invoice-print').onclick = () => {
       const area = $('#print-area');
       if (!area) return toast('Thiếu vùng in', 'error');

@@ -24,7 +24,8 @@ const routes = [
   { prefix: '/api/books', port: () => config.bookServicePort, roles: ['READER', 'LIBRARIAN', 'ADMIN'], methodRoles: { POST: ['LIBRARIAN', 'ADMIN'], PUT: ['LIBRARIAN', 'ADMIN'], DELETE: ['LIBRARIAN', 'ADMIN'] } },
   { prefix: '/api/borrows', port: () => config.borrowServicePort, roles: ['READER', 'LIBRARIAN', 'ADMIN'] },
   // Giữ nguyên '/pay' khi forward (borrow-service định nghĩa GET/POST /pay/:id)
-  { prefix: '/api/pay', port: () => config.borrowServicePort, public: true }
+  { prefix: '/api/pay', port: () => config.borrowServicePort, public: true },
+  { prefix: '/api/chat', port: () => config.chatServicePort, roles: ['READER', 'LIBRARIAN', 'ADMIN'] }
 ];
 
 function allowedRoles(req) {

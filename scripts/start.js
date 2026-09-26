@@ -6,6 +6,7 @@ const services = [
   'services/user/index.js',
   'services/book/index.js',
   'services/borrow/index.js',
+  'services/chat/index.js',
   'gateway/index.js'
 ];
 const children = services.map((file) => spawn(process.execPath, [path.join(rootDir, file)], { stdio: 'inherit', env: process.env }));

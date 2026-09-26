@@ -98,15 +98,19 @@ function rentalUnpaid(r) {
   return effectiveRental(r) > 0 && !r.paidRental;
 }
 
+function remainderOf(r) {
+  if (r.status === 'BORROWING') return rentalUnpaid(r) ? effectiveRental(r) : 0;
+  if (r.status !== 'RETURNED' || r.paid) return 0;
+  const rental = r.paidRental ? 0 : effectiveRental(r);
+  return rental + (Number(r.lateFee) || 0);
+}
+
 function canPay(r) {
-  if (r.status === 'BORROWING') return rentalUnpaid(r);
-  return r.status === 'RETURNED' && !r.paid && ((Number(r.rentalFee) || 0) + (Number(r.lateFee) || 0)) > 0;
+  return remainderOf(r) > 0;
 }
 
 function payableAmount(r) {
-  if (r.status === 'BORROWING') return effectiveRental(r);
-  const rental = r.paidRental ? 0 : effectiveRental(r);
-  return rental + (Number(r.lateFee) || 0);
+  return remainderOf(r);
 }
 
 function borrowActions(record) {
@@ -156,15 +160,17 @@ function bindBorrowActions() {
 }
 
 function estimateFee(record) {
-  // Phiếu cũ chưa chốt giá (rentalFee = 0) thì ước tính theo giá sách hiện tại
+  // Phiếu cũ chưa chốt giá (rentalFee = 0) thì ước tính theo giá sách hiện tại.
+  // Đã thu trước thì trừ ra, chỉ còn phải thu phần dư.
   const rental = Number(record.rentalFee) || (window.__bookPrices || {})[record.bookId] || 0;
+  const prepaid = record.paidRental ? rental : 0;
   let days = 0;
   if (record.dueDate) {
     const diff = Date.now() - new Date(record.dueDate).getTime();
     if (diff > 0) days = Math.ceil(diff / 86400000);
   }
   const late = days * LATE_FEE_PER_DAY;
-  return { rental, days, late, total: rental + late };
+  return { rental, prepaid, days, late, total: rental + late - prepaid };
 }
 
 function confirmBorrowAction(record, action) {
@@ -188,7 +194,8 @@ function confirmBorrowAction(record, action) {
     ${fee ? `<div class="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
       <p class="flex justify-between"><span>Tiền mượn sách</span><b>${fmtVND(fee.rental)}</b></p>
       <p class="flex justify-between"><span>Phạt quá hạn ${fee.days > 0 ? `(${fee.days} ngày × ${fmtVND(LATE_FEE_PER_DAY)})` : '(đúng hạn)'}</span><b>${fmtVND(fee.late)}</b></p>
-      <p class="flex justify-between border-t border-slate-200 pt-2 text-base"><span class="font-semibold">Tổng phí</span><b class="text-rose-700">${fmtVND(fee.total)}</b></p>
+      ${fee.prepaid > 0 ? `<p class="flex justify-between text-emerald-700"><span>Đã thu trước</span><b>−${fmtVND(fee.prepaid)}</b></p>` : ''}
+      <p class="flex justify-between border-t border-slate-200 pt-2 text-base"><span class="font-semibold">Còn phải thu</span><b class="text-rose-700">${fmtVND(fee.total)}</b></p>
     </div>` : ''}
     ${action === 'reject' ? '<textarea id="reject-reason" class="mt-4 w-full rounded-lg border border-slate-300 p-3" minlength="3" placeholder="Lý do từ chối" required></textarea>' : ''}
     <div class="mt-6 flex justify-end gap-3">

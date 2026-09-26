@@ -5,7 +5,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const dataDir = path.join(root, 'data');
-for (const name of ['user-service-test.db', 'book-service-test.db', 'borrow-service-test.db']) {
+for (const name of ['user-service-test.db', 'book-service-test.db', 'borrow-service-test.db', 'chat-service-test.db']) {
   const file = path.join(dataDir, name);
   if (fs.existsSync(file)) fs.unlinkSync(file);
 }
@@ -17,10 +17,11 @@ const env = {
   USER_SERVICE_PORT: '4101',
   BOOK_SERVICE_PORT: '4102',
   BORROW_SERVICE_PORT: '4103',
+  CHAT_SERVICE_PORT: '4104',
   JWT_SECRET: 'test-secret',
   INTERNAL_SERVICE_SECRET: 'test-internal-secret'
 };
-const files = ['services/user/index.js', 'services/book/index.js', 'services/borrow/index.js', 'gateway/index.js'];
+const files = ['services/user/index.js', 'services/book/index.js', 'services/borrow/index.js', 'services/chat/index.js', 'gateway/index.js'];
 const children = files.map((file) => spawn(process.execPath, [path.join(root, file)], { env, stdio: 'ignore' }));
 
 function call(method, requestPath, body, token) {
@@ -292,6 +293,27 @@ async function login(username, password = '123456') {
       const bill = await call('GET', `/api/pay/${id}?t=${token}`, undefined, undefined);
       expect(bill.status === 200 && bill.data.rentalFee === 12000 && bill.data.payableNow === 12000, `Bill fallback sai: ${JSON.stringify(bill.data)}`);
       await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+    });
+    await test('Thu trước + trả đúng hạn: tự chốt, không thu lại', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      const id = created.data.id;
+      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
+      await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      expect(returned.status === 200 && returned.data.paid === true && returned.data.totalFee === 12000, `Không tự chốt: ${JSON.stringify(returned.data)}`);
+      const again = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(again.status === 409, 'Thu lại phải bị chặn');
+    });
+    await test('Thu trước + trả trễ: chỉ thu nốt tiền phạt', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      const id = created.data.id;
+      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
+      await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      await dbExec('UPDATE borrow_records SET due_date = ? WHERE id = ?', [new Date(Date.now() - 2.5 * 86400000).toISOString(), id]);
+      const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      expect(returned.status === 200 && returned.data.paid === false && returned.data.totalFee === 18000, `Phí sai: ${JSON.stringify(returned.data)}`);
+      const rest = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(rest.status === 200 && rest.data.paid === true, 'Không thu nốt được');
     });
     await test('QR confirm: mở link + bấm thanh toán', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);

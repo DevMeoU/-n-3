@@ -10,18 +10,47 @@ const staffRoles = ['LIBRARIAN', 'ADMIN'];
 const validId = (value) => Number.isInteger(Number(value)) && Number(value) > 0;
 const text = (value) => typeof value === 'string' ? value.trim() : '';
 
+// Giá mượn tính theo NGÀY từ lúc duyệt (ngày đầu tính luôn 1 ngày).
 // Phạt quá hạn: 2.000đ/ngày (giữ đồng bộ với LATE_FEE_PER_DAY ở frontend/js/store.js)
 const LATE_FEE_PER_DAY = 2000;
+const DAY_MS = 86400000;
 
 function lateDays(dueDate, now = new Date()) {
   if (!dueDate) return 0;
   const diff = now - new Date(dueDate);
-  return diff > 0 ? Math.ceil(diff / 86400000) : 0;
+  return diff > 0 ? Math.ceil(diff / DAY_MS) : 0;
 }
 
-function toApi(record) {
-  const rentalFee = Number(record.rental_fee) || 0;
-  const lateFee = Number(record.late_fee) || 0;
+// Số ngày mượn tính tiền: từ ngày duyệt đến mốc kết thúc, tối thiểu 1 ngày
+function borrowedDays(approvedDate, endTime) {
+  if (!approvedDate) return 0;
+  const diff = new Date(endTime).getTime() - new Date(approvedDate).getTime();
+  return Math.max(1, Math.ceil(diff / DAY_MS));
+}
+
+// Bảng phí của phiếu tại 1 thời điểm: tiền mượn = giá/ngày × số ngày
+function quoteOf(record, now = new Date()) {
+  const rate = Number(record.rental_fee) || 0;
+  const paidAmount = Number(record.paid_amount) || 0;
+  if (!rate || record.status === 'PENDING' || record.status === 'REJECTED' || !record.approved_date) {
+    return { rate: 0, days: 0, rental: 0, late: 0, total: 0, paid: paidAmount, due: 0 };
+  }
+  const end = record.status === 'RETURNED' && record.return_date ? new Date(record.return_date) : now;
+  const days = borrowedDays(record.approved_date, end);
+  const rental = rate * days;
+  const late = record.status === 'RETURNED'
+    ? (Number(record.late_fee) || 0)
+    : lateDays(record.due_date, now) * LATE_FEE_PER_DAY;
+  const total = rental + late;
+  return { rate, days, rental, late, total, paid: paidAmount, due: Math.max(0, total - paidAmount) };
+}
+
+function vnd(n) {
+  return `${Number(n || 0).toLocaleString('vi-VN')}đ`;
+}
+
+function toApi(record, now = new Date()) {
+  const q = quoteOf(record, now);
   return {
     id: record.id,
     userId: record.user_id,
@@ -35,13 +64,17 @@ function toApi(record) {
     status: record.status,
     note: record.note,
     rejectReason: record.reject_reason,
-    rentalFee,
-    lateFee,
-    totalFee: rentalFee + lateFee,
+    rentalFee: q.rate,
+    daysBorrowed: q.days,
+    accruedRental: q.rental,
+    lateFee: q.late,
+    totalFee: q.total,
+    paidAmount: q.paid,
+    payableNow: q.due,
     paid: Number(record.paid) === 1,
     paidAt: record.paid_at,
     payToken: record.pay_token || null,
-    paidRental: Number(record.paid_rental) === 1,
+    paidRental: q.paid > 0,
     renewed: Number(record.renewed) === 1
   };
 }
@@ -225,11 +258,13 @@ async function start() {
         const bookNow = await bookRequest('GET', `/books/${record.book_id}`);
         if (bookNow.status === 200) rentalFee = Math.max(0, Number(bookNow.body.rental_price) || 0);
       }
-      // Chốt phạt quá hạn tại lúc trả: số ngày trễ × 2.000đ
+      // Chốt phạt quá hạn tại lúc trả: số ngày trễ × 2.000đ.
+      // Đã thu trước đủ (không phạt) thì chốt paid luôn, khỏi thu lại.
       const days = lateDays(record.due_date);
       const lateFee = days * LATE_FEE_PER_DAY;
+      const autoPaid = (Number(record.paid_rental) === 1 && lateFee === 0) ? 1 : 0;
       try {
-        await db.run("UPDATE borrow_records SET status = 'RETURNED', return_date = CURRENT_TIMESTAMP, rental_fee = ?, late_fee = ? WHERE id = ? AND status = 'BORROWING'", [rentalFee, lateFee, record.id]);
+        await db.run("UPDATE borrow_records SET status = 'RETURNED', return_date = CURRENT_TIMESTAMP, rental_fee = ?, late_fee = ?, paid = CASE WHEN paid = 1 OR ? = 1 THEN 1 ELSE 0 END, paid_at = CASE WHEN paid = 1 OR ? = 1 THEN COALESCE(paid_at, CURRENT_TIMESTAMP) ELSE NULL END WHERE id = ? AND status = 'BORROWING'", [rentalFee, lateFee, autoPaid, autoPaid, record.id]);
       } catch (error) {
         await bookRequest('POST', `/books/${record.book_id}/reserve`);
         throw error;
@@ -252,9 +287,15 @@ async function start() {
         if (Number(record.paid_rental) === 1) return res.status(409).json({ error: 'Đã thu tiền mượn của phiếu này' });
         await db.run('UPDATE borrow_records SET paid_rental = 1 WHERE id = ?', [record.id]);
       } else if (record.status === 'RETURNED') {
-        if (rentalFee + lateFee === 0) return res.status(409).json({ error: 'Phiếu không phát sinh phí' });
         if (Number(record.paid) === 1) return res.status(409).json({ error: 'Phiếu này đã thu tiền' });
-        await db.run('UPDATE borrow_records SET paid = 1, paid_rental = 1, paid_at = CURRENT_TIMESTAMP WHERE id = ?', [record.id]);
+        // Số dư = phần chưa thu (đã thu trước tiền mượn thì chỉ còn phạt)
+        const remainder = (Number(record.paid_rental) === 1 ? 0 : rentalFee) + lateFee;
+        if (remainder === 0) {
+          // Không còn gì để thu (vd thu trước đủ + đúng hạn) → chốt luôn, khỏi thu lại
+          await db.run('UPDATE borrow_records SET paid = 1, paid_rental = 1, paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ?', [record.id]);
+        } else {
+          await db.run('UPDATE borrow_records SET paid = 1, paid_rental = 1, paid_at = CURRENT_TIMESTAMP WHERE id = ?', [record.id]);
+        }
       } else {
         return res.status(409).json({ error: 'Chỉ thu tiền phiếu đang mượn hoặc đã trả sách' });
       }
@@ -309,11 +350,8 @@ async function start() {
           await db.run('UPDATE borrow_records SET paid_rental = 1 WHERE id = ?', [record.id]);
         }
       } else if (record.status === 'RETURNED') {
-        if ((Number(record.rental_fee) || 0) + (Number(record.late_fee) || 0) === 0) {
-          return res.status(409).json({ error: 'Phiếu không phát sinh phí' });
-        }
         if (Number(record.paid) !== 1) {
-          await db.run('UPDATE borrow_records SET paid = 1, paid_rental = 1, paid_at = CURRENT_TIMESTAMP WHERE id = ?', [record.id]);
+          await db.run('UPDATE borrow_records SET paid = 1, paid_rental = 1, paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ?', [record.id]);
         }
       } else {
         return res.status(409).json({ error: 'Phiếu chưa tới kỳ thanh toán' });

@@ -29,14 +29,20 @@ export function feeBadge(record) {
         ? '<small class="mt-0.5 block font-semibold text-emerald-700">Đã thu trước</small>'
         : '<small class="mt-0.5 block font-semibold text-amber-700">Thu từ ngày mượn</small>');
   }
-  const total = rental + late;
+  const prices = (typeof window !== 'undefined' && window.__bookPrices) || {};
+  const effRental = rental || prices[record.bookId] || 0;
+  const prepaid = record.paidRental ? effRental : 0;
+  const due = effRental + late - prepaid;
+  const total = effRental + late;
   if (!total) return '<span class="text-slate-400">Miễn phí</span>';
-  const paid = record.paid
-    ? '<small class="mt-0.5 block font-semibold text-emerald-700">Đã thu</small>'
-    : '<small class="mt-0.5 block font-semibold text-amber-700">Chưa thu</small>';
+  if (record.paid || due === 0) {
+    return `<span class="font-semibold">${fmtVND(total)}</span><small class="mt-0.5 block font-semibold text-emerald-700">Đã thu${prepaid && late === 0 ? ' trước' : ''}</small>`;
+  }
+  const preLine = prepaid > 0
+    ? `<small class="block font-normal text-slate-500">đã thu trước ${fmtVND(prepaid)}</small>` : '';
   const lateLine = late > 0
     ? `<small class="block font-normal text-slate-500">gồm phạt ${fmtVND(late)}</small>` : '';
-  return `<span class="font-semibold">${fmtVND(total)}</span>${lateLine}${paid}`;
+  return `<span class="font-semibold">${fmtVND(due)}</span>${preLine}${lateLine}<small class="mt-0.5 block font-semibold text-amber-700">Chưa thu</small>`;
 }
 
 export function toast(message, type = 'success') {
@@ -113,6 +119,7 @@ export function layout(content, { onNavigate, onLogout }) {
     ['books', 'Sách'],
     ['borrows', 'Mượn / Trả'],
     ...(can('ADMIN') ? [['users', 'Tài khoản']] : []),
+    ['chat', 'Chat <span id="chat-badge" style="display:none" class="ml-1 rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-bold text-white"></span>'],
     ['profile', 'Hồ sơ']
   ];
   root.innerHTML = `

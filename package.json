@@ -14,7 +14,8 @@
     "gateway": "node gateway/index.js",
     "service:user": "node services/user/index.js",
     "service:book": "node services/book/index.js",
-    "service:borrow": "node services/borrow/index.js"
+    "service:borrow": "node services/borrow/index.js",
+    "service:chat": "node services/chat/index.js"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

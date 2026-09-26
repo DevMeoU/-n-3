@@ -12,6 +12,7 @@ const config = {
   userServicePort: Number(process.env.USER_SERVICE_PORT || (isTest ? 4101 : 3001)),
   bookServicePort: Number(process.env.BOOK_SERVICE_PORT || (isTest ? 4102 : 3002)),
   borrowServicePort: Number(process.env.BORROW_SERVICE_PORT || (isTest ? 4103 : 3003)),
+  chatServicePort: Number(process.env.CHAT_SERVICE_PORT || (isTest ? 4104 : 3004)),
   jwtSecret: process.env.JWT_SECRET || 'library-demo-local-secret-change-before-deploy',
   internalServiceSecret: process.env.INTERNAL_SERVICE_SECRET || 'library-demo-internal-secret',
   dbPath(name) {
