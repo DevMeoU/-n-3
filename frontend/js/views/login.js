@@ -5,7 +5,7 @@ import { $, root, toast } from '../ui.js';
 
 export function loginView({ onLoggedIn }) {
   root.innerHTML = `
-    <section class="grid min-h-screen place-items-center bg-gradient-to-br from-blue-700 via-blue-600 to-slate-900 p-4">
+    <section class="login-bg grid min-h-screen place-items-center p-4">
       <div class="grid w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl md:grid-cols-2">
         <div class="bg-slate-900 p-8 text-white">
           <span class="grid h-12 w-12 place-items-center rounded-xl bg-blue-500 text-xl font-bold">L</span>

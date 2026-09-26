@@ -4,15 +4,39 @@
   display: none !important;
 }
 
-/* Nền toàn trang: gradient nhạt + họa tiết chấm chìm */
+/* Nền toàn trang: mesh pastel 2 góc + họa tiết chấm chìm, giữa vẫn sáng */
 body.app-bg {
   background-color: #eef2ff;
   background-image:
+    radial-gradient(600px 300px at 6% -40px, rgba(191, 219, 254, 0.55), transparent 70%),
+    radial-gradient(700px 340px at 106% 8%, rgba(221, 214, 254, 0.5), transparent 70%),
     radial-gradient(#c7d2fe 1px, transparent 1px),
     linear-gradient(180deg, #eef2ff 0%, #f8fafc 420px);
   background-size:
+    auto,
+    auto,
     22px 22px,
     100% 100%;
+}
+
+/* Trang Login: ảnh kệ sách local + lớp phủ xanh đậm (overlay 70-85%) */
+.login-bg {
+  position: relative;
+  background-color: #0b1e4b;
+  background-image: url('/assets/bg/login-bg.svg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.login-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(8, 20, 60, 0.85), rgba(29, 78, 216, 0.55) 55%, rgba(2, 6, 23, 0.85));
+}
+.login-bg > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Header: trắng + viền nhấn gradient xanh */
