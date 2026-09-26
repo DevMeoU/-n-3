@@ -282,6 +282,17 @@ async function login(username, password = '123456') {
       const rest = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
       expect(rest.status === 200 && rest.data.paid === true, 'Không thu nốt được');
     });
+    await test('Bill phiếu cũ: fallback giá hiện tại, không 0đ oan', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      const id = created.data.id;
+      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
+      await dbExec('UPDATE borrow_records SET rental_fee = 0 WHERE id = ?', [id]);
+      const all = await call('GET', '/api/borrows', undefined, librarian.token);
+      const token = all.data.find((r) => r.id === id).payToken;
+      const bill = await call('GET', `/api/pay/${id}?t=${token}`, undefined, undefined);
+      expect(bill.status === 200 && bill.data.rentalFee === 12000 && bill.data.payableNow === 12000, `Bill fallback sai: ${JSON.stringify(bill.data)}`);
+      await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+    });
     await test('QR confirm: mở link + bấm thanh toán', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
       const id = created.data.id;

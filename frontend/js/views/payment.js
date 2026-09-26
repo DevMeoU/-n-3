@@ -49,9 +49,9 @@ export function paymentModal(record) {
     </div>
     <div class="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
       <p class="flex justify-between"><span>Sách</span><b class="text-right">${esc(record.bookTitle)}</b></p>
-      <p class="flex justify-between"><span>Tiền mượn</span><b>${fmtVND(record.rentalFee)}</b></p>
+      <p class="flex justify-between"><span>Tiền mượn</span><b id="pay-bill-rental">${fmtVND(record.rentalFee)}</b></p>
       <p class="flex justify-between"><span>Phạt quá hạn</span><b>${fmtVND(record.lateFee)}</b></p>
-      <p class="flex justify-between border-t border-slate-200 pt-2 text-base"><span class="font-semibold">${record.status === 'BORROWING' ? 'Thu trước tiền mượn' : 'Tổng thu'}</span><b class="text-rose-700">${fmtVND(payable)}</b></p>
+      <p class="flex justify-between border-t border-slate-200 pt-2 text-base"><span class="font-semibold">${record.status === 'BORROWING' ? 'Thu trước tiền mượn' : 'Tổng thu'}</span><b id="pay-bill-total" class="text-rose-700">${fmtVND(payable)}</b></p>
     </div>
     <p class="mt-4 text-center text-sm font-medium">Độc giả quét mã QR để thanh toán (demo)</p>
     <div id="pay-qr" class="mx-auto mt-2 w-fit rounded-xl border border-slate-200 bg-white p-3"><p class="text-sm text-slate-500">Đang tạo mã QR...</p></div>
@@ -59,12 +59,20 @@ export function paymentModal(record) {
       <input id="pay-link" readonly value="${esc(link)}" class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs">
       <button id="pay-copy" class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Copy</button>
     </div>
-    <p id="pay-status" class="mt-3 text-center text-sm font-medium text-amber-700">Đang chờ thanh toán...</p>
+    <p id="pay-status" class="mt-3 text-center text-sm font-medium text-amber-700"><span class="spinner"></span> Đang chờ thanh toán...</p>
     <div class="mt-4 flex justify-end gap-3">
       <button data-close class="rounded-lg border border-slate-300 px-4 py-2">Đóng</button>
       ${can('LIBRARIAN', 'ADMIN') ? '<button id="pay-cash" class="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800">Đã thu tiền mặt</button>' : ''}
     </div>`, () => {
-    // QR luôn mã hóa link production (điện thoại quét được) nếu đã cấu hình PUBLIC_BASE_URL
+    // Lấy bill mới nhất từ server (đã gồm fallback giá) + QR mã hóa link production
+    fetch(`/api/pay/${record.id}?t=${encodeURIComponent(record.payToken)}`)
+      .then((res) => res.json())
+      .then((bill) => {
+        if (!bill || bill.error || !document.body.contains($('#pay-bill-total'))) return;
+        $('#pay-bill-rental').textContent = fmtVND(bill.rentalFee);
+        $('#pay-bill-total').textContent = fmtVND(bill.payableNow);
+      })
+      .catch(() => {});
     payBase().then((base) => {
       if (!document.body.contains($('#pay-qr'))) return;
       link = payLink(record, base);

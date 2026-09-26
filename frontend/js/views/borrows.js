@@ -9,15 +9,20 @@ export async function borrowsView(router) {
   layout(loading(), router);
   try {
     const endpoint = can('READER') ? '/borrows/my' : '/borrows';
-    const [records, books] = await Promise.all([api(endpoint), api('/books').catch(() => [])]);
+    let records = await api(endpoint);
+    const books = await api('/books').catch(() => []);
     window.__bookPrices = Object.fromEntries((books || []).map((b) => [b.id, Number(b.rental_price) || 0]));
+    let currentFilter = '';
+    if (window.__borrowTimer) clearInterval(window.__borrowTimer);
 
     layout(`
       <section class="space-y-5">
         <div class="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 class="text-2xl font-bold">${can('READER') ? 'Phiếu mượn của tôi' : 'Quản lý mượn / trả'}</h1>
-            <p class="mt-1 text-sm text-slate-500">Hạn mượn mặc định 14 ngày từ ngày duyệt. Quá hạn phạt ${fmtVND(LATE_FEE_PER_DAY)}/ngày.</p>
+            <p class="mt-1 text-sm text-slate-500">Hạn mượn mặc định 14 ngày từ ngày duyệt. Quá hạn phạt ${fmtVND(LATE_FEE_PER_DAY)}/ngày.
+              <span id="auto-note" class="ml-1 inline-flex items-center gap-1 text-slate-400"></span>
+            </p>
           </div>
           ${can('LIBRARIAN', 'ADMIN') ? `<span class="rounded-full bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800">${records.filter((r) => r.status === 'PENDING').length} phiếu chờ duyệt</span>` : ''}
         </div>
@@ -57,16 +62,40 @@ export async function borrowsView(router) {
     };
 
     document.querySelectorAll('[data-status]').forEach((button) => {
-      button.onclick = () => draw(button.dataset.status);
+      button.onclick = () => { currentFilter = button.dataset.status; draw(currentFilter); };
     });
     draw();
+    // Tự tải lại nền: ai thanh toán/quản lý đổi trạng thái ở máy khác thì bảng tự cập nhật
+    const sig = (list) => JSON.stringify(list.map((r) => [r.id, r.status, r.rentalFee, r.lateFee, r.paid, r.paidRental, r.renewed]));
+    window.__borrowTimer = setInterval(async () => {
+      if (!document.body.contains($('#borrow-table'))) return clearInterval(window.__borrowTimer);
+      if ($('#modal') && $('#modal').innerHTML.trim() !== '') return; // modal đang mở thì thôi
+      const note = $('#auto-note');
+      try {
+        const fresh = await api(endpoint);
+        if (sig(fresh) !== sig(records)) {
+          records = fresh;
+          window.__borrowRecords = records;
+          draw(currentFilter);
+          toast('Bảng phiếu vừa tự cập nhật');
+        }
+        if (note) note.innerHTML = `· Tự làm mới ${new Date().toLocaleTimeString('vi-VN')}`;
+      } catch {
+        if (note) note.textContent = '';
+      }
+    }, 8000);
   } catch (error) {
     layout(errorCard(error.message), router);
   }
 }
 
+function effectiveRental(r) {
+  // Phiếu cũ chưa chốt giá thì ước tính theo giá sách hiện tại
+  return Number(r.rentalFee) || (window.__bookPrices || {})[r.bookId] || 0;
+}
+
 function rentalUnpaid(r) {
-  return (Number(r.rentalFee) || 0) > 0 && !r.paidRental;
+  return effectiveRental(r) > 0 && !r.paidRental;
 }
 
 function canPay(r) {
@@ -75,8 +104,8 @@ function canPay(r) {
 }
 
 function payableAmount(r) {
-  if (r.status === 'BORROWING') return Number(r.rentalFee) || 0;
-  const rental = r.paidRental ? 0 : (Number(r.rentalFee) || 0);
+  if (r.status === 'BORROWING') return effectiveRental(r);
+  const rental = r.paidRental ? 0 : effectiveRental(r);
   return rental + (Number(r.lateFee) || 0);
 }
 

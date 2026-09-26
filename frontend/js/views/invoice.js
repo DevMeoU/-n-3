@@ -54,7 +54,7 @@ export function invoiceModal(record) {
           <tr><td class="border border-slate-300 px-3 py-2 font-bold">Tổng thanh toán</td><td class="border border-slate-300 px-3 py-2 text-right font-bold">${fmtVND(total)}</td></tr>
         </tbody>
       </table>
-      <p class="mt-2">Trạng thái: <b class="${r.paid ? 'text-emerald-700' : 'text-amber-700'}">${r.paid ? 'ĐÃ THANH TOÁN' : 'CHƯA THANH TOÁN'}</b></p>
+      <p class="mt-2">Trạng thái: <b id="invoice-status" class="${r.paid ? 'text-emerald-700' : 'text-amber-700'}">${r.paid ? 'ĐÃ THANH TOÁN' : 'CHƯA THANH TOÁN'}</b></p>
       ${!r.paid && r.payToken && total > 0 ? `
       <div class="mt-3 rounded-lg bg-slate-50 p-3 text-center">
         <p class="text-sm font-medium">Quét mã để thanh toán bằng điện thoại</p>
@@ -76,6 +76,23 @@ export function invoiceModal(record) {
       <button data-close class="rounded-lg border border-slate-300 px-4 py-2">Đóng</button>
       <button id="invoice-print" class="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">In hóa đơn</button>
     </div>`, () => {
+    // Poll: bên kia quét QR thanh toán xong thì hóa đơn tự đổi trạng thái
+    if (!r.paid && r.payToken && total > 0) {
+      const timer = setInterval(async () => {
+        const statusEl = $('#invoice-status');
+        if (!document.body.contains(statusEl)) return clearInterval(timer);
+        try {
+          const res = await fetch(`/api/pay/${r.id}?t=${encodeURIComponent(r.payToken)}`);
+          const bill = await res.json();
+          if (bill.paid) {
+            clearInterval(timer);
+            statusEl.textContent = 'ĐÃ THANH TOÁN';
+            statusEl.className = 'text-emerald-700';
+            toast('Phiếu này vừa được thanh toán');
+          }
+        } catch { /* thử lại kỳ sau */ }
+      }, 3000);
+    }
     const qrBox = $('#invoice-qr');
     if (qrBox) {
       payBase().then((base) => {

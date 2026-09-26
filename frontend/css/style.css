@@ -122,6 +122,25 @@ button:focus-visible {
   }
 }
 
+/* Icon xoay khi chờ (poll thanh toán, tải nền) */
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  vertical-align: -3px;
+  border: 3px solid #cbd5e1;
+  border-top-color: #1d4ed8;
+  border-radius: 9999px;
+  animation: spin 0.8s linear infinite;
+}
+.spinner.light {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* In hóa đơn: chỉ hiện vùng in */
 #print-area {
   display: none;

@@ -22,8 +22,9 @@ export function feeBadge(record) {
   const rental = Number(record.rentalFee) || 0;
   const late = Number(record.lateFee) || 0;
   if (record.status === 'BORROWING') {
-    if (!rental) return '<span class="text-slate-400">Miễn phí</span>';
-    return `<span class="font-semibold">${fmtVND(rental)}</span>` +
+    const eff = rental || ((typeof window !== 'undefined' && window.__bookPrices) || {})[record.bookId] || 0;
+    if (!eff) return '<span class="text-slate-400">Miễn phí</span>';
+    return `<span class="font-semibold">${fmtVND(eff)}</span>` +
       (record.paidRental
         ? '<small class="mt-0.5 block font-semibold text-emerald-700">Đã thu trước</small>'
         : '<small class="mt-0.5 block font-semibold text-amber-700">Thu từ ngày mượn</small>');

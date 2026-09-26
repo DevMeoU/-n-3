@@ -72,14 +72,27 @@ function toBill(record) {
   };
 }
 
-// Kèm ảnh bìa hiện tại của sách để đối chiếu đúng loại sách trên trang quét QR
+// Kèm ảnh bìa hiện tại của sách để đối chiếu đúng loại sách trên trang quét QR.
+// Phiếu cũ chưa chốt giá (rental_fee = 0) thì lấy theo giá sách hiện tại để khỏi 0đ oan.
 async function billWithCover(record) {
   const bill = toBill(record);
   bill.coverUrl = null;
   try {
     const book = await bookRequest('GET', `/books/${record.book_id}`);
-    if (book.status === 200 && book.body.cover_url) bill.coverUrl = book.body.cover_url;
-  } catch { /* thiếu ảnh vẫn hiện hóa đơn */ }
+    if (book.status === 200) {
+      if (book.body.cover_url) bill.coverUrl = book.body.cover_url;
+      if (!bill.rentalFee && (bill.status === 'BORROWING' || bill.status === 'RETURNED')) {
+        const price = Math.max(0, Number(book.body.rental_price) || 0);
+        if (price > 0) {
+          bill.rentalFee = price;
+          bill.totalFee = price + bill.lateFee;
+          bill.payableNow = bill.status === 'BORROWING'
+            ? (bill.paidRental ? 0 : price)
+            : (bill.paid ? 0 : (bill.paidRental ? bill.lateFee : price + bill.lateFee));
+        }
+      }
+    }
+  } catch { /* thiếu ảnh/giá vẫn hiện hóa đơn */ }
   return bill;
 }
 
