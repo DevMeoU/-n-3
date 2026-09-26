@@ -1,5 +1,6 @@
 // views/invoice.js — lập & in hóa đơn phí mượn/trả (thuần frontend, dùng dữ liệu phiếu)
 import { $, esc, fmt, fmtVND, showModal, toast } from '../ui.js';
+import { payLink, payBase, qrSvg } from './payment.js';
 
 const DAY = 86400000;
 
@@ -54,6 +55,12 @@ export function invoiceModal(record) {
         </tbody>
       </table>
       <p class="mt-2">Trạng thái: <b class="${r.paid ? 'text-emerald-700' : 'text-amber-700'}">${r.paid ? 'ĐÃ THANH TOÁN' : 'CHƯA THANH TOÁN'}</b></p>
+      ${!r.paid && r.payToken && total > 0 ? `
+      <div class="mt-3 rounded-lg bg-slate-50 p-3 text-center">
+        <p class="text-sm font-medium">Quét mã để thanh toán bằng điện thoại</p>
+        <div id="invoice-qr" class="mx-auto mt-2 w-fit rounded-lg border border-slate-200 bg-white p-2"></div>
+        <p class="mt-1 break-all text-xs text-slate-500">${esc(payLink(r))}</p>
+      </div>` : ''}
       <div class="mt-6 grid grid-cols-2 text-center">
         <div><p class="text-slate-500">Độc giả</p><p class="mt-10 text-sm text-slate-400">(Ký, ghi rõ họ tên)</p></div>
         <div><p class="text-slate-500">Thủ thư</p><p class="mt-10 text-sm text-slate-400">(Ký, ghi rõ họ tên)</p></div>
@@ -69,6 +76,16 @@ export function invoiceModal(record) {
       <button data-close class="rounded-lg border border-slate-300 px-4 py-2">Đóng</button>
       <button id="invoice-print" class="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">In hóa đơn</button>
     </div>`, () => {
+    const qrBox = $('#invoice-qr');
+    if (qrBox) {
+      payBase().then((base) => {
+        if (!document.body.contains(qrBox)) return;
+        const link = payLink(record, base);
+        qrBox.innerHTML = qrSvg(link) || '';
+        const linkText = qrBox.nextElementSibling;
+        if (linkText) linkText.textContent = link;
+      });
+    }
     $('#invoice-print').onclick = () => {
       const area = $('#print-area');
       if (!area) return toast('Thiếu vùng in', 'error');

@@ -6,7 +6,7 @@ import { borrowsView } from './borrows.js';
 
 let cachedBase = null;
 
-async function payBase() {
+export async function payBase() {
   if (cachedBase !== null) return cachedBase;
   try {
     const res = await fetch('/api/config');
@@ -22,7 +22,7 @@ export function payLink(record, base) {
   return `${base || location.origin}/#/pay/${record.id}?t=${record.payToken}`;
 }
 
-function qrSvg(link) {
+export function qrSvg(link) {
   try {
     const qr = window.qrcode(0, 'M');
     qr.addData(link);
