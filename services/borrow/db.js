@@ -1,8 +1,7 @@
 const { openDatabase } = require('../../shared/db');
-const config = require('../../shared/config');
 
 async function createBorrowDatabase() {
-  const db = openDatabase(config.dbPath('borrow-service'));
+  const db = openDatabase('borrow-service');
   await db.exec(`
     CREATE TABLE IF NOT EXISTS borrow_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

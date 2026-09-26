@@ -1,5 +1,4 @@
 const { openDatabase } = require('../../shared/db');
-const config = require('../../shared/config');
 
 const seedBooks = [
   ['Clean Code', 'Robert C. Martin', 'Công nghệ', 5, 5],
@@ -15,7 +14,7 @@ const seedBooks = [
 ];
 
 async function createBookDatabase() {
-  const db = openDatabase(config.dbPath('book-service'));
+  const db = openDatabase('book-service');
   await db.exec(`
     CREATE TABLE IF NOT EXISTS books (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,10 +31,12 @@ async function createBookDatabase() {
     CREATE INDEX IF NOT EXISTS idx_books_author ON books(author);
     CREATE INDEX IF NOT EXISTS idx_books_category ON books(category);
   `);
-  // Migration cho DB cũ (tạo trước khi có ảnh bìa)
-  const columns = await db.all('PRAGMA table_info(books)');
-  if (!columns.some((col) => col.name === 'cover_url')) {
+  // Migration cho DB cũ (tạo trước khi có ảnh bìa).
+  // Dùng try-ALTER thay vì PRAGMA để chạy được cả SQLite local lẫn Turso.
+  try {
     await db.exec('ALTER TABLE books ADD COLUMN cover_url TEXT');
+  } catch (error) {
+    if (!/duplicate column name/i.test(error.message)) throw error;
   }
   const count = await db.get('SELECT COUNT(*) AS count FROM books');
   if (count.count === 0) {

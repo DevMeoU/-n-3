@@ -1,9 +1,8 @@
 const bcrypt = require('bcryptjs');
 const { openDatabase } = require('../../shared/db');
-const config = require('../../shared/config');
 
 async function createUserDatabase() {
-  const db = openDatabase(config.dbPath('user-service'));
+  const db = openDatabase('user-service');
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

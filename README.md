@@ -11,7 +11,7 @@ Mỗi service sở hữu SQLite riêng. Borrow Service chỉ gọi Book Service 
 ## Công nghệ
 
 - Node.js 18+ và Express
-- SQLite: `user-service.db`, `book-service.db`, `borrow-service.db`
+- SQLite: `user-service.db`, `book-service.db`, `borrow-service.db` (local qua `sqlite3`, remote qua `@libsql/client`/Turso khi đặt `TURSO_*_URL`)
 - JWT, bcryptjs, RBAC backend
 - HTML/CSS/JS thuần, Tailwind CDN
 - Integration test Node.js thuần
@@ -103,7 +103,30 @@ Repository có `render.yaml` cho **một Render Web Service**. Cách này phù h
 4. Đặt `JWT_SECRET` và `INTERNAL_SERVICE_SECRET` giá trị mạnh nếu không dùng giá trị tự sinh.
 5. Sau deploy, cập nhật URL thật tại đây: **Demo URL: _chưa tạo_**.
 
-> Lưu ý: Render free tier có filesystem tạm thời. SQLite phù hợp demo, nhưng dữ liệu có thể reset sau redeploy/restart. Không dùng cấu hình này cho production.
+> Lưu ý: Render free tier có filesystem tạm thời. SQLite file local phù hợp demo, nhưng dữ liệu có thể reset sau redeploy/restart. Không dùng cấu hình này cho production.
+
+## Giữ database khi deploy (Turso, free, không cần thẻ)
+
+Mỗi service dùng 1 DB riêng nên tạo **3 database** trên [Turso](https://turso.tech) (free: 100 DB, 5GB):
+
+1. Đăng ký tại https://app.turso.tech (login bằng GitHub, không cần thẻ). Cài CLI đúng tên gói: `npm i -g turso` rồi `turso auth login`. (Không thích cài CLI thì làm hết trên web: Databases → Create Database, xong vào từng DB lấy URL ở Overview và tạo token ở Data → API Tokens.)
+2. Tạo 3 DB cùng region gần VN (vd `sin` Singapore):
+   ```powershell
+   turso db create library-user --region sin
+   turso db create library-book --region sin
+   turso db create library-borrow --region sin
+   ```
+3. Lấy URL + token:
+   ```powershell
+   turso db show library-user --url
+   turso db tokens create library-user
+   ```
+   (1 token dùng chung cho cả 3 DB được.)
+4. Trên Render (service → Environment) thêm 4 biến:
+   `TURSO_USER_SERVICE_URL`, `TURSO_BOOK_SERVICE_URL`, `TURSO_BORROW_SERVICE_URL` (= 3 URL `libsql://...`) và `TURSO_TOKEN`. Deploy lại.
+5. Kiểm tra log có 3 dòng `User/Book/Borrow Service` mà không báo lỗi DB là xong. Schema + seed tự tạo trên Turso ở lần chạy đầu.
+
+Không đặt các biến trên thì code tự dùng file local như cũ (test `npm test` luôn dùng local).
 
 ## Cấu trúc
 
