@@ -3,12 +3,14 @@ import { state, can, LATE_FEE_PER_DAY } from '../store.js';
 import { api } from '../api.js';
 import { $, layout, esc, fmt, fmtVND, loading, errorCard, badge, feeBadge, showModal, closeModal, toast } from '../ui.js';
 import { paymentModal } from './payment.js';
+import { invoiceModal } from './invoice.js';
 
 export async function borrowsView(router) {
   layout(loading(), router);
   try {
     const endpoint = can('READER') ? '/borrows/my' : '/borrows';
-    const records = await api(endpoint);
+    const [records, books] = await Promise.all([api(endpoint), api('/books').catch(() => [])]);
+    window.__bookPrices = Object.fromEntries((books || []).map((b) => [b.id, Number(b.rental_price) || 0]));
 
     layout(`
       <section class="space-y-5">
@@ -63,8 +65,19 @@ export async function borrowsView(router) {
   }
 }
 
+function rentalUnpaid(r) {
+  return (Number(r.rentalFee) || 0) > 0 && !r.paidRental;
+}
+
 function canPay(r) {
+  if (r.status === 'BORROWING') return rentalUnpaid(r);
   return r.status === 'RETURNED' && !r.paid && ((Number(r.rentalFee) || 0) + (Number(r.lateFee) || 0)) > 0;
+}
+
+function payableAmount(r) {
+  if (r.status === 'BORROWING') return Number(r.rentalFee) || 0;
+  const rental = r.paidRental ? 0 : (Number(r.rentalFee) || 0);
+  return rental + (Number(r.lateFee) || 0);
 }
 
 function borrowActions(record) {
@@ -72,19 +85,27 @@ function borrowActions(record) {
     return `<button data-action="cancel" data-id="${record.id}" class="rounded-md border border-rose-300 px-3 py-1.5 text-rose-700 hover:bg-rose-50">Hủy yêu cầu</button>`;
   }
   if (can('READER') && record.status === 'BORROWING') {
-    return `<button data-action="renew" data-id="${record.id}" class="rounded-md border border-blue-300 px-3 py-1.5 text-blue-700 hover:bg-blue-50">Gia hạn +7 ngày</button>`;
+    return `<button data-action="renew" data-id="${record.id}" class="rounded-md border border-blue-300 px-3 py-1.5 text-blue-700 hover:bg-blue-50">Gia hạn +7 ngày</button>` +
+      (canPay(record) ? ` <button data-action="qrpay" data-id="${record.id}" class="rounded-md bg-emerald-700 px-3 py-1.5 text-white hover:bg-emerald-800">Thanh toán ${fmtVND(record.rentalFee)}</button>` : '');
   }
   if (can('READER') && canPay(record)) {
     return `<button data-action="qrpay" data-id="${record.id}" class="rounded-md bg-emerald-700 px-3 py-1.5 text-white hover:bg-emerald-800">Thanh toán</button>`;
+  }
+  if (can('READER') && record.status === 'RETURNED') {
+    return `<button data-action="invoice" data-id="${record.id}" class="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">Hóa đơn</button>`;
   }
   if (can('LIBRARIAN', 'ADMIN') && record.status === 'PENDING') {
     return `<button data-action="approve" data-id="${record.id}" class="rounded-md bg-blue-700 px-3 py-1.5 text-white">Duyệt</button> <button data-action="reject" data-id="${record.id}" class="rounded-md border border-rose-300 px-3 py-1.5 text-rose-700">Từ chối</button>`;
   }
   if (can('LIBRARIAN', 'ADMIN') && record.status === 'BORROWING') {
-    return `<button data-action="return" data-id="${record.id}" class="rounded-md bg-emerald-700 px-3 py-1.5 text-white">Xác nhận trả</button>`;
+    return `<button data-action="return" data-id="${record.id}" class="rounded-md bg-emerald-700 px-3 py-1.5 text-white">Xác nhận trả</button>` +
+      (canPay(record) ? ` <button data-action="qrpay" data-id="${record.id}" class="rounded-md bg-slate-700 px-3 py-1.5 text-white hover:bg-slate-800">QR thu tiền</button> <button data-action="pay" data-id="${record.id}" class="rounded-md border border-emerald-600 px-3 py-1.5 text-emerald-700 hover:bg-emerald-50">Thu tiền mặt</button>` : '');
   }
   if (can('LIBRARIAN', 'ADMIN') && canPay(record)) {
     return `<button data-action="qrpay" data-id="${record.id}" class="rounded-md bg-slate-700 px-3 py-1.5 text-white hover:bg-slate-800">QR thu tiền</button> <button data-action="pay" data-id="${record.id}" class="rounded-md border border-emerald-600 px-3 py-1.5 text-emerald-700 hover:bg-emerald-50">Thu tiền mặt</button>`;
+  }
+  if (can('LIBRARIAN', 'ADMIN') && record.status === 'RETURNED') {
+    return `<button data-action="invoice" data-id="${record.id}" class="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">Hóa đơn</button>`;
   }
   return '—';
 }
@@ -99,13 +120,15 @@ function bindBorrowActions() {
       const record = findRecord(button.dataset.id);
       if (!record) return toast('Không tìm thấy phiếu', 'error');
       if (button.dataset.action === 'qrpay') return paymentModal(record);
+      if (button.dataset.action === 'invoice') return invoiceModal(record);
       confirmBorrowAction(record, button.dataset.action);
     };
   });
 }
 
 function estimateFee(record) {
-  const rental = Number(record.rentalFee) || 0;
+  // Phiếu cũ chưa chốt giá (rentalFee = 0) thì ước tính theo giá sách hiện tại
+  const rental = Number(record.rentalFee) || (window.__bookPrices || {})[record.bookId] || 0;
   let days = 0;
   if (record.dueDate) {
     const diff = Date.now() - new Date(record.dueDate).getTime();
@@ -118,11 +141,11 @@ function estimateFee(record) {
 function confirmBorrowAction(record, action) {
   const id = record.id;
   const config = {
-    approve: ['Duyệt phiếu mượn', `Duyệt phiếu sẽ giảm tồn kho một bản. Giá mượn chốt theo giá sách hiện tại: <b>${fmtVND(state.books.find((b) => b.id === record.bookId)?.rental_price)}</b>/lượt.`],
+    approve: ['Duyệt phiếu mượn', `Duyệt phiếu sẽ giảm tồn kho một bản. Giá mượn chốt theo giá sách hiện tại: <b>${fmtVND((window.__bookPrices || {})[record.bookId] ?? state.books.find((b) => b.id === record.bookId)?.rental_price)}</b>/lượt.`],
     reject: ['Từ chối yêu cầu', 'Nhập lý do để độc giả biết.'],
     cancel: ['Hủy yêu cầu', 'Yêu cầu sẽ được chuyển sang trạng thái đã hủy.'],
     renew: ['Gia hạn mượn sách', `Hạn trả dời thêm <b>7 ngày</b> (từ ${fmt(record.dueDate)}). Mỗi phiếu chỉ gia hạn <b>1 lần</b>, phiếu quá hạn không gia hạn được.`],
-    pay: ['Thu tiền mặt', `Xác nhận đã thu <b>${fmtVND((Number(record.rentalFee) || 0) + (Number(record.lateFee) || 0))}</b> của phiếu #${id} (${esc(record.bookTitle)}).`],
+    pay: ['Thu tiền mặt', `Xác nhận đã thu <b>${fmtVND(payableAmount(record))}</b> của phiếu #${id} (${esc(record.bookTitle)}).`],
     return: ['Xác nhận trả sách', 'Tồn kho sẽ tăng lại một bản.']
   }[action];
 

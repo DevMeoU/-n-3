@@ -253,13 +253,34 @@ async function login(username, password = '123456') {
       const badLink = await call('GET', `/api/pay/${feeBorrowId}?t=sai-token`, undefined, undefined);
       expect(badLink.status === 404, 'Link sai phải 404');
       const bill = await call('GET', `/api/pay/${feeBorrowId}?t=${target.payToken}`, undefined, undefined);
-      expect(bill.status === 200 && bill.data.totalFee === 12000 && !bill.data.paid && !('payToken' in bill.data) && !('userId' in bill.data), 'Bill công khai sai');
+      expect(bill.status === 200 && bill.data.totalFee === 12000 && !bill.data.paid && !('payToken' in bill.data) && !('userId' in bill.data) && bill.data.quantity === 1, 'Bill công khai sai');
       const readerPay = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, reader.token);
       expect(readerPay.status === 403, 'Reader không được thu tiền mặt');
       const cash = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, librarian.token);
       expect(cash.status === 200 && cash.data.paid === true, 'Không thu được tiền');
       const again = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, librarian.token);
       expect(again.status === 409, 'Thu 2 lần phải bị chặn');
+    });
+    await test('Phiếu cũ chưa có giá: trả lấy theo giá sách hiện tại', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      const id = created.data.id;
+      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
+      await dbExec('UPDATE borrow_records SET rental_fee = 0 WHERE id = ?', [id]);
+      const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      expect(returned.status === 200 && returned.data.rentalFee === 12000 && returned.data.totalFee === 12000, `Không chữa giá phiếu cũ: ${JSON.stringify(returned.data)}`);
+    });
+    await test('Thu trước tiền mượn khi đang mượn', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      const id = created.data.id;
+      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
+      const prepay = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(prepay.status === 200 && prepay.data.paidRental === true && prepay.data.paid === false, 'Không thu trước được');
+      const twice = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(twice.status === 409, 'Thu trước 2 lần phải bị chặn');
+      const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      expect(returned.status === 200 && returned.data.totalFee === 12000, 'Tổng phí sai');
+      const rest = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(rest.status === 200 && rest.data.paid === true, 'Không thu nốt được');
     });
     await test('QR confirm: mở link + bấm thanh toán', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);

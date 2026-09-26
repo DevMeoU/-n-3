@@ -74,6 +74,7 @@ Test tự khởi động 4 tiến trình tại cổng `4100–4103`, tạo datab
 | `POST /api/borrows`, `GET /api/borrows/my`, `POST /api/borrows/:id/cancel|renew` | READER, owner-only (renew: +7 ngày, 1 lần, chưa quá hạn) |
 | `GET /api/borrows`, `POST /api/borrows/:id/approve|reject|return|pay` | LIBRARIAN, ADMIN (pay: thu tiền mặt) |
 | `GET /api/pay/:id?t=`, `POST /api/pay/:id/confirm` | Public bằng pay_token (QR thanh toán fake cho demo) |
+| `GET /api/config` | Public, trả `payBaseUrl` để QR luôn mã hóa link production |
 
 Gửi JWT qua header:
 

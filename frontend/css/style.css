@@ -121,3 +121,23 @@ button:focus-visible {
     min-width: 620px;
   }
 }
+
+/* In hóa đơn: chỉ hiện vùng in */
+#print-area {
+  display: none;
+}
+@media print {
+  #root,
+  #toast,
+  #modal {
+    display: none !important;
+  }
+  #print-area {
+    display: block !important;
+    color: #000;
+  }
+  #print-area table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+}

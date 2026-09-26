@@ -19,14 +19,23 @@ export function fmtVND(value) {
 }
 
 export function feeBadge(record) {
-  const total = (Number(record.rentalFee) || 0) + (Number(record.lateFee) || 0);
+  const rental = Number(record.rentalFee) || 0;
+  const late = Number(record.lateFee) || 0;
+  if (record.status === 'BORROWING') {
+    if (!rental) return '<span class="text-slate-400">Miễn phí</span>';
+    return `<span class="font-semibold">${fmtVND(rental)}</span>` +
+      (record.paidRental
+        ? '<small class="mt-0.5 block font-semibold text-emerald-700">Đã thu trước</small>'
+        : '<small class="mt-0.5 block font-semibold text-amber-700">Thu từ ngày mượn</small>');
+  }
+  const total = rental + late;
   if (!total) return '<span class="text-slate-400">Miễn phí</span>';
   const paid = record.paid
     ? '<small class="mt-0.5 block font-semibold text-emerald-700">Đã thu</small>'
     : '<small class="mt-0.5 block font-semibold text-amber-700">Chưa thu</small>';
-  const late = Number(record.lateFee) > 0
-    ? `<small class="block font-normal text-slate-500">gồm phạt ${fmtVND(record.lateFee)}</small>` : '';
-  return `<span class="font-semibold">${fmtVND(total)}</span>${late}${paid}`;
+  const lateLine = late > 0
+    ? `<small class="block font-normal text-slate-500">gồm phạt ${fmtVND(late)}</small>` : '';
+  return `<span class="font-semibold">${fmtVND(total)}</span>${lateLine}${paid}`;
 }
 
 export function toast(message, type = 'success') {

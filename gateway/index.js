@@ -9,6 +9,14 @@ app.use(express.json({ limit: '3mb' }));
 app.use('/assets', express.static(path.join(__dirname, '..', 'frontend')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
 
+// Cấu hình công khai cho frontend (không lộ secret).
+// PUBLIC_BASE_URL: URL production (vd Render) để QR thanh toán luôn mã hóa
+// link mở được trên điện thoại, kể cả khi thủ thư thao tác ở localhost.
+app.get('/api/config', (req, res) => {
+  const base = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
+  res.json({ payBaseUrl: base || null });
+});
+
 const routes = [
   { prefix: '/api/auth', port: () => config.userServicePort, public: true, rewrite: (url) => url.replace('/api/auth', '') },
   { prefix: '/api/users', port: () => config.userServicePort, roles: ['ADMIN'] },

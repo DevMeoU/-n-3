@@ -34,14 +34,20 @@ function renderBill(bill, token) {
   $('#pay-box').innerHTML = `
     <h1 class="text-center text-xl font-bold">Repayment</h1>
     <h2 class="mt-6 text-lg font-semibold text-slate-200">Thông tin hóa đơn</h2>
+    <div class="mt-3 flex items-center gap-3 rounded-xl bg-slate-800 p-3">
+      ${bill.coverUrl ? `<img src="${esc(bill.coverUrl)}" alt="Bìa sách" class="h-20 w-14 shrink-0 rounded-md object-cover" onerror="this.style.display='none'">` : ''}
+      <div class="min-w-0 text-sm">
+        <p class="truncate font-bold text-white">${esc(bill.bookTitle)}</p>
+        <p class="mt-1 text-slate-400">Phiếu mượn #${bill.id} · Số lượng: <b class="text-white">${bill.quantity || 1} bản</b></p>
+      </div>
+    </div>
     <div class="mt-2 space-y-2 text-sm">
-      <p class="flex justify-between text-slate-400"><span>Phiếu mượn #${bill.id} · ${esc(bill.bookTitle)}</span></p>
       <p class="flex justify-between"><span class="text-slate-400">Tiền mượn sách</span><span>${fmtVND(bill.rentalFee)}</span></p>
       <p class="flex justify-between"><span class="text-slate-400">Phạt quá hạn</span><span>${fmtVND(bill.lateFee)}</span></p>
-      <p class="flex justify-between border-t border-slate-700 pt-2 text-base"><span class="text-slate-300">Số tiền thanh toán</span><b class="text-rose-500">${fmtVND(bill.totalFee)}</b></p>
+      <p class="flex justify-between border-t border-slate-700 pt-2 text-base"><span class="text-slate-300">${bill.status === 'BORROWING' ? 'Tiền mượn (thu trước)' : 'Số tiền thanh toán'}</span><b class="text-rose-500">${fmtVND(bill.payableNow)}</b></p>
     </div>
     <button id="pay-now" class="mt-6 w-full rounded-xl bg-emerald-600 px-4 py-3.5 font-bold text-white hover:bg-emerald-500">
-      Thanh toán ${fmtVND(bill.totalFee)}
+      Thanh toán ${fmtVND(bill.payableNow)}
     </button>
     <p class="mt-3 text-center text-xs text-slate-500">Demo: bấm nút là hệ thống giả lập chuyển khoản thành công, không trừ tiền thật.</p>`;
   $('#pay-now').onclick = async (event) => {
@@ -60,7 +66,7 @@ function renderBill(bill, token) {
       toast('Thanh toán thành công');
     } catch (error) {
       btn.disabled = false;
-      btn.textContent = `Thanh toán ${fmtVND(bill.totalFee)}`;
+      btn.textContent = `Thanh toán ${fmtVND(bill.payableNow)}`;
       toast(error.message, 'error');
     }
   };
@@ -72,7 +78,7 @@ function renderSuccess(bill) {
     <div class="text-center">
       <span class="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-600 text-3xl font-bold">✓</span>
       <h1 class="mt-4 text-xl font-bold text-emerald-400">ĐÃ THANH TOÁN</h1>
-      <p class="mt-1 text-sm text-slate-400">Phiếu mượn #${bill.id} · ${esc(bill.bookTitle)}</p>
+      <p class="mt-1 text-sm text-slate-400">Phiếu mượn #${bill.id} · ${esc(bill.bookTitle)} · Số lượng: ${bill.quantity || 1} bản</p>
     </div>
     <div class="mt-6 space-y-2 text-sm">
       <p class="flex justify-between"><span class="text-slate-400">Số tiền</span><b>${fmtVND(bill.totalFee)}</b></p>

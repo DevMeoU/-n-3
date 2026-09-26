@@ -21,6 +21,7 @@ async function createBorrowDatabase() {
       paid INTEGER NOT NULL DEFAULT 0 CHECK (paid IN (0, 1)),
       paid_at TEXT,
       pay_token TEXT,
+      paid_rental INTEGER NOT NULL DEFAULT 0 CHECK (paid_rental IN (0, 1)),
       renewed INTEGER NOT NULL DEFAULT 0 CHECK (renewed IN (0, 1))
     );
     CREATE INDEX IF NOT EXISTS idx_borrow_records_user ON borrow_records(user_id);
@@ -34,6 +35,7 @@ async function createBorrowDatabase() {
     'ALTER TABLE borrow_records ADD COLUMN paid INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE borrow_records ADD COLUMN paid_at TEXT',
     'ALTER TABLE borrow_records ADD COLUMN pay_token TEXT',
+    'ALTER TABLE borrow_records ADD COLUMN paid_rental INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE borrow_records ADD COLUMN renewed INTEGER NOT NULL DEFAULT 0'
   ]) {
     try {
