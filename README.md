@@ -121,9 +121,9 @@ Mỗi service dùng 1 DB riêng nên tạo **3 database** trên [Turso](https://
    turso db show library-user --url
    turso db tokens create library-user
    ```
-   (1 token dùng chung cho cả 3 DB được.)
-4. Trên Render (service → Environment) thêm 4 biến:
-   `TURSO_USER_SERVICE_URL`, `TURSO_BOOK_SERVICE_URL`, `TURSO_BORROW_SERVICE_URL` (= 3 URL `libsql://...`) và `TURSO_TOKEN`. Deploy lại.
+   (Token Turso thường chỉ có quyền đúng 1 DB → tạo 1 token cho mỗi DB: vào từng DB → API Tokens.)
+4. Trên Render (service → Environment) thêm 7 biến:
+   `TURSO_USER_SERVICE_URL`, `TURSO_BOOK_SERVICE_URL`, `TURSO_BORROW_SERVICE_URL` (= 3 URL `libsql://...`) và `TURSO_USER_SERVICE_TOKEN`, `TURSO_BOOK_SERVICE_TOKEN`, `TURSO_BORROW_SERVICE_TOKEN` (= 3 token tương ứng). Deploy lại.
 5. Kiểm tra log có 3 dòng `User/Book/Borrow Service` mà không báo lỗi DB là xong. Schema + seed tự tạo trên Turso ở lần chạy đầu.
 
 Không đặt các biến trên thì code tự dùng file local như cũ (test `npm test` luôn dùng local).

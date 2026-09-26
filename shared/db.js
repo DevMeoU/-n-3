@@ -9,10 +9,12 @@ const config = require('./config');
 
 function tursoEndpoint(name) {
   if (config.isTest) return null;
-  const key = `TURSO_${name.toUpperCase().replace(/-/g, '_')}_URL`;
-  const url = process.env[key];
+  const prefix = `TURSO_${name.toUpperCase().replace(/-/g, '_')}`;
+  const url = process.env[`${prefix}_URL`];
   if (!url) return null;
-  return { url, authToken: process.env.TURSO_TOKEN || undefined };
+  // Token Turso thường gắn theo từng DB → ưu tiên token riêng, rơi về TURSO_TOKEN chung
+  const authToken = process.env[`${prefix}_TOKEN`] || process.env.TURSO_TOKEN || undefined;
+  return { url, authToken };
 }
 
 function toNumber(value) {
