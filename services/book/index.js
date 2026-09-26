@@ -14,20 +14,25 @@ const coversDir = path.join(config.rootDir, 'frontend', 'covers');
 fs.mkdirSync(coversDir, { recursive: true });
 const COVER_LIMIT = 2 * 1024 * 1024; // 2MB file thật
 
+// Nhận dạng loại ảnh theo magic bytes (nội dung thật), không tin đuôi file/mime
+// vì ảnh tải về hay bị đổi đuôi (vd PNG/HEIC/SVG đặt tên .jpg)
+function detectImageExt(buf) {
+  if (buf.length > 1 && buf[0] === 0xff && buf[1] === 0xd8) return 'jpg';
+  if (buf.length > 3 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+  if (buf.length > 11 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  if (buf.length > 3 && buf.toString('ascii', 1, 4) === 'PNG') return 'png';
+  return null;
+}
+
 function parseCoverImage(dataUrl) {
-  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(
+  const match = /^data:image\/[a-zA-Z0-9.+-]+;base64,([A-Za-z0-9+/=\r\n]+)$/.exec(
     typeof dataUrl === 'string' ? dataUrl.trim() : ''
   );
   if (!match) return { error: 'Ảnh bìa phải là file JPG/PNG/WebP' };
-  const mime = match[1];
-  const buf = Buffer.from(match[2], 'base64');
+  const buf = Buffer.from(match[1], 'base64');
   if (!buf.length || buf.length > COVER_LIMIT) return { error: 'Ảnh bìa vượt quá 2MB' };
-  const valid =
-    (mime === 'image/jpeg' && buf[0] === 0xff && buf[1] === 0xd8) ||
-    (mime === 'image/png' && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) ||
-    (mime === 'image/webp' && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP');
-  if (!valid) return { error: 'File ảnh không hợp lệ' };
-  const ext = mime === 'image/jpeg' ? 'jpg' : mime === 'image/png' ? 'png' : 'webp';
+  const ext = detectImageExt(buf);
+  if (!ext) return { error: 'File không phải ảnh JPG/PNG/WebP (có thể file bị đổi đuôi, hãy mở và lưu lại đúng định dạng)' };
   return { value: { buf, ext } };
 }
 

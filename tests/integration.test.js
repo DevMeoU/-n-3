@@ -106,6 +106,8 @@ async function login(username, password = '123456') {
       expect(forbidden.status === 403, 'Reader upload được ảnh');
       const missing = await call('POST', '/api/books/999999/cover', { image: png1x1 }, librarian.token);
       expect(missing.status === 404, 'Upload sách không tồn tại phải 404');
+      const mislabeled = await call('POST', `/api/books/${bookId}/cover`, { image: png1x1.replace('image/png', 'image/jpeg') }, librarian.token);
+      expect(mislabeled.status === 200 && mislabeled.data.cover_url === `/assets/covers/book-${bookId}.png`, 'Phải nhận dạng PNG theo nội dung, không theo khai báo');
       const del = await call('DELETE', `/api/books/${bookId}/cover`, undefined, librarian.token);
       expect(del.status === 200 && !del.data.cover_url, 'Không gỡ được ảnh');
       expect(!fs.existsSync(file), 'File ảnh không được xóa');

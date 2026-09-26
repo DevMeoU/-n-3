@@ -123,6 +123,7 @@ function bookModal(book) {
     </form>`, () => {
     const fileInput = $('#book-cover-file');
     const preview = $('#book-cover-preview');
+    let coverDecodeOk = true;
     fileInput.onchange = () => {
       const file = fileInput.files[0];
       if (!file) return;
@@ -131,7 +132,17 @@ function bookModal(book) {
         fileInput.value = '';
         return;
       }
-      preview.src = URL.createObjectURL(file);
+      // Kiểm tra trình duyệt có đọc được ảnh không (bắt HEIC/SVG đổi đuôi sớm)
+      coverDecodeOk = false;
+      const url = URL.createObjectURL(file);
+      const probe = new Image();
+      probe.onload = () => { coverDecodeOk = true; preview.src = url; };
+      probe.onerror = () => {
+        URL.revokeObjectURL(url);
+        toast('Trình duyệt không đọc được ảnh này (thường do file HEIC/SVG đổi đuôi). Hãy mở ảnh và lưu lại thành JPG/PNG.', 'error');
+        fileInput.value = '';
+      };
+      probe.src = url;
     };
     const removeBtn = $('#book-cover-remove');
     if (removeBtn) {
@@ -155,6 +166,7 @@ function bookModal(book) {
       const readFile = () => new Promise((resolve, reject) => {
         const file = fileInput.files[0];
         if (!file) return resolve(null);
+        if (!coverDecodeOk) return reject(new Error('Ảnh chưa đọc được, hãy chọn file JPG/PNG khác'));
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = () => reject(new Error('Không đọc được file ảnh'));
