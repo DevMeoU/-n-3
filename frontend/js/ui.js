@@ -14,6 +14,21 @@ export function fmt(value) {
   return value ? new Date(value).toLocaleDateString('vi-VN') : '—';
 }
 
+export function fmtVND(value) {
+  return `${Number(value || 0).toLocaleString('vi-VN')}đ`;
+}
+
+export function feeBadge(record) {
+  const total = (Number(record.rentalFee) || 0) + (Number(record.lateFee) || 0);
+  if (!total) return '<span class="text-slate-400">Miễn phí</span>';
+  const paid = record.paid
+    ? '<small class="mt-0.5 block font-semibold text-emerald-700">Đã thu</small>'
+    : '<small class="mt-0.5 block font-semibold text-amber-700">Chưa thu</small>';
+  const late = Number(record.lateFee) > 0
+    ? `<small class="block font-normal text-slate-500">gồm phạt ${fmtVND(record.lateFee)}</small>` : '';
+  return `<span class="font-semibold">${fmtVND(total)}</span>${late}${paid}`;
+}
+
 export function toast(message, type = 'success') {
   const element = $('#toast');
   element.textContent = message;
@@ -84,9 +99,11 @@ export function coverImg(book = {}, cls = 'book-cover') {
 // Khung header + content chung cho các trang đã login
 export function layout(content, { onNavigate, onLogout }) {
   const nav = [
+    ['dashboard', 'Tổng quan'],
     ['books', 'Sách'],
     ['borrows', 'Mượn / Trả'],
-    ...(can('ADMIN') ? [['users', 'Tài khoản']] : [])
+    ...(can('ADMIN') ? [['users', 'Tài khoản']] : []),
+    ['profile', 'Hồ sơ']
   ];
   root.innerHTML = `
     <header class="border-b border-slate-200 bg-white">

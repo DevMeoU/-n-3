@@ -36,6 +36,49 @@ async function start() {
     } catch (error) { next(error); }
   });
 
+  // Hồ sơ cá nhân: mọi vai trò đã đăng nhập (Gateway mở riêng, xem gateway/index.js)
+  app.get('/users/me', async (req, res, next) => {
+    const identity = requireRoles(req, res, ['READER', 'LIBRARIAN', 'ADMIN']);
+    if (!identity) return;
+    try {
+      const user = await db.get('SELECT id, full_name, username, role, created_at FROM users WHERE id = ?', [identity.id]);
+      if (!user) return res.status(404).json({ error: 'Không tìm thấy tài khoản' });
+      res.json(publicUser(user));
+    } catch (error) { next(error); }
+  });
+
+  app.put('/users/me', async (req, res, next) => {
+    const identity = requireRoles(req, res, ['READER', 'LIBRARIAN', 'ADMIN']);
+    if (!identity) return;
+    try {
+      const fullName = cleanText(req.body.fullName);
+      if (fullName.length < 2 || fullName.length > 100) {
+        return res.status(400).json({ error: 'Họ tên phải từ 2 đến 100 ký tự' });
+      }
+      await db.run('UPDATE users SET full_name = ? WHERE id = ?', [fullName, identity.id]);
+      const user = await db.get('SELECT id, full_name, username, role, created_at FROM users WHERE id = ?', [identity.id]);
+      res.json(publicUser(user));
+    } catch (error) { next(error); }
+  });
+
+  app.post('/users/me/password', async (req, res, next) => {
+    const identity = requireRoles(req, res, ['READER', 'LIBRARIAN', 'ADMIN']);
+    if (!identity) return;
+    try {
+      const oldPassword = typeof req.body.oldPassword === 'string' ? req.body.oldPassword : '';
+      const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';
+      if (!oldPassword || newPassword.length < 6) {
+        return res.status(400).json({ error: 'Mật khẩu mới phải từ 6 ký tự trở lên' });
+      }
+      const user = await db.get('SELECT * FROM users WHERE id = ?', [identity.id]);
+      if (!user || !(await bcrypt.compare(oldPassword, user.password_hash))) {
+        return res.status(401).json({ error: 'Mật khẩu hiện tại không đúng' });
+      }
+      await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [await bcrypt.hash(newPassword, 10), identity.id]);
+      res.json({ message: 'Đã đổi mật khẩu' });
+    } catch (error) { next(error); }
+  });
+
   app.get('/users', async (req, res, next) => {
     if (!requireRoles(req, res, ['ADMIN'])) return;
     try {

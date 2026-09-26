@@ -19,6 +19,9 @@ export const labels = {
   REJECTED: 'Đã từ chối/Hủy'
 };
 
+// Phạt quá hạn (VND/ngày). GIỮ ĐỒNG BỘ với LATE_FEE_PER_DAY ở services/borrow/index.js
+export const LATE_FEE_PER_DAY = 2000;
+
 export function can(...allowed) {
   return Boolean(state.user) && allowed.includes(state.user.role);
 }

@@ -41,7 +41,7 @@ Dữ liệu SQLite tự tạo và seed trong thư mục `data/` ở lần chạy
 npm test
 ```
 
-Test tự khởi động 4 tiến trình tại cổng `4100–4103`, tạo database test riêng và kiểm tra 13 tình huống:
+Test tự khởi động 4 tiến trình tại cổng `4100–4103`, tạo database test riêng và kiểm tra 17 tình huống:
 
 1. Login sai mật khẩu.
 2. API thiếu JWT.
@@ -49,13 +49,17 @@ Test tự khởi động 4 tiến trình tại cổng `4100–4103`, tạo datab
 4. Reader không được thêm sách.
 5. Librarian thêm sách.
 6. Validate số lượng sách.
-7. Reader không xem users.
-8. Admin tạo user và xử lý username trùng.
-9. Reader tạo PENDING không đổi tồn.
-10. Librarian duyệt làm giảm tồn.
-11. Trả sách tăng tồn và không trả hai lần.
-12. Reader hủy PENDING của chính họ.
-13. Không duyệt phiếu REJECTED.
+7. Upload, nhận dạng định dạng và gỡ ảnh bìa; chặn sai quyền/sách không tồn tại.
+8. Reader không xem users.
+9. Admin tạo user và xử lý username trùng.
+10. Admin sửa tên, vai trò và chặn dữ liệu vai trò sai.
+11. Chặn admin tự hạ quyền, tự xóa và xóa admin cuối.
+12. Admin xóa tài khoản; tài khoản đã xóa không đăng nhập lại được.
+13. Reader tạo PENDING không đổi tồn.
+14. Librarian duyệt làm giảm tồn.
+15. Trả sách tăng tồn và không trả hai lần.
+16. Reader hủy PENDING của chính họ.
+17. Không duyệt phiếu REJECTED.
 
 ## Phân quyền API
 
@@ -66,8 +70,10 @@ Test tự khởi động 4 tiến trình tại cổng `4100–4103`, tạo datab
 | `POST/PUT /api/books` | LIBRARIAN, ADMIN |
 | `POST/DELETE /api/books/:id/cover` | LIBRARIAN, ADMIN (upload JSON `{image: dataURL JPG/PNG/WebP ≤2MB}`, file lưu `frontend/covers/book-<id>.<ext>`) |
 | `GET/POST /api/users`, `PUT/DELETE /api/users/:id` | ADMIN (không tự đổi vai trò/tự xóa, giữ ≥1 admin) |
-| `POST /api/borrows`, `GET /api/borrows/my`, `POST /api/borrows/:id/cancel` | READER, owner-only khi hủy |
-| `GET /api/borrows`, `POST /api/borrows/:id/approve|reject|return` | LIBRARIAN, ADMIN |
+| `GET/PUT /api/users/me`, `POST /api/users/me/password` | READER/LIBRARIAN/ADMIN (hồ sơ chính mình) |
+| `POST /api/borrows`, `GET /api/borrows/my`, `POST /api/borrows/:id/cancel|renew` | READER, owner-only (renew: +7 ngày, 1 lần, chưa quá hạn) |
+| `GET /api/borrows`, `POST /api/borrows/:id/approve|reject|return|pay` | LIBRARIAN, ADMIN (pay: thu tiền mặt) |
+| `GET /api/pay/:id?t=`, `POST /api/pay/:id/confirm` | Public bằng pay_token (QR thanh toán fake cho demo) |
 
 Gửi JWT qua header:
 
@@ -89,8 +95,10 @@ PENDING --thủ thư từ chối / độc giả hủy--> REJECTED
 ```
 
 - Reader tạo PENDING, chưa trừ tồn kho.
-- Librarian/Admin duyệt mới gọi Book Service `reserve` và tính hạn trả 14 ngày.
-- Chỉ `BORROWING` được trả; trả thành công gọi `release`.
+- Librarian/Admin duyệt mới gọi Book Service `reserve`, tính hạn trả 14 ngày và chốt giá mượn (`rental_fee`) + cấp `pay_token` QR.
+- Độc giả được gia hạn 1 lần (+7 ngày) nếu chưa quá hạn.
+- Chỉ `BORROWING` được trả; trả thành công gọi `release` và chốt phạt quá hạn (`late_fee` = số ngày trễ × 2.000đ).
+- Thu tiền: thủ thư bấm "Thu tiền mặt" (`POST .../pay`) hoặc độc giả quét QR mở link `#/pay/:id?t=` rồi bấm Thanh toán (fake, demo).
 - Chỉ Book Service sửa `available`, luôn bảo đảm `0 <= available <= quantity`.
 
 ## Deploy Render
@@ -134,8 +142,8 @@ Không đặt các biến trên thì code tự dùng file local như cũ (test `
 ├─ gateway/index.js            # API Gateway: JWT/RBAC/proxy + static SPA
 ├─ services/
 │  ├─ user/index.js + db.js    # login, tài khoản, bcrypt/JWT
-│  ├─ book/index.js + db.js    # danh mục, tồn kho, reserve/release
-│  └─ borrow/index.js + db.js  # state machine phiếu mượn
+│  ├─ book/index.js + db.js    # danh mục, tồn kho, reserve/release, giá + ảnh bìa
+│  └─ borrow/index.js + db.js  # state machine phiếu mượn, phí, gia hạn, QR pay
 ├─ shared/                     # config, database wrapper, auth helper
 ├─ frontend/
 │  ├─ index.html               # SPA shell (Tailwind CDN)
@@ -145,9 +153,10 @@ Không đặt các biến trên thì code tự dùng file local như cũ (test `
 │     ├─ store.js              # state + roles/labels
 │     ├─ api.js                # fetch qua Gateway
 │     ├─ ui.js                 # toast/modal/badge/layout
-│     └─ views/                # login, books, borrows, users
-├─ scripts/start.js            # chạy 4 tiến trình local
-├─ tests/integration.test.js   # 13 test tự động
+│     ├─ views/                # login, books, borrows, users, dashboard, profile, pay, payment
+│     └─ vendor/qrcode.min.js  # lib QR offline (MIT, cdnjs qrcode-generator)
+├─ scripts/start.js            # chạy 4 tiến trình local (+ stop.js dọn port)
+├─ tests/integration.test.js   # 24 test tự động
 ├─ docs/diagrams/              # Mermaid kiến trúc, ERD, state, sequence
 ├─ data/                       # SQLite local (gitignored)
 └─ render.yaml                 # Blueprint deploy Render

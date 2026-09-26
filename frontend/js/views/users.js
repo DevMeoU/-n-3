@@ -5,7 +5,7 @@ import { $, layout, esc, fmt, loading, errorCard, showModal, closeModal, toast }
 
 export async function usersView(router) {
   if (!can('ADMIN')) {
-    location.hash = 'books';
+    location.hash = 'dashboard';
     return;
   }
   layout(loading(), router);

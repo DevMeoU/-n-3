@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { createBorrowDatabase } = require('./db');
 const { requireRoles } = require('../../shared/auth');
 const config = require('../../shared/config');
@@ -9,7 +10,18 @@ const staffRoles = ['LIBRARIAN', 'ADMIN'];
 const validId = (value) => Number.isInteger(Number(value)) && Number(value) > 0;
 const text = (value) => typeof value === 'string' ? value.trim() : '';
 
+// Phạt quá hạn: 2.000đ/ngày (giữ đồng bộ với LATE_FEE_PER_DAY ở frontend/js/store.js)
+const LATE_FEE_PER_DAY = 2000;
+
+function lateDays(dueDate, now = new Date()) {
+  if (!dueDate) return 0;
+  const diff = now - new Date(dueDate);
+  return diff > 0 ? Math.ceil(diff / 86400000) : 0;
+}
+
 function toApi(record) {
+  const rentalFee = Number(record.rental_fee) || 0;
+  const lateFee = Number(record.late_fee) || 0;
   return {
     id: record.id,
     userId: record.user_id,
@@ -22,8 +34,37 @@ function toApi(record) {
     returnDate: record.return_date,
     status: record.status,
     note: record.note,
-    rejectReason: record.reject_reason
+    rejectReason: record.reject_reason,
+    rentalFee,
+    lateFee,
+    totalFee: rentalFee + lateFee,
+    paid: Number(record.paid) === 1,
+    paidAt: record.paid_at,
+    payToken: record.pay_token || null,
+    renewed: Number(record.renewed) === 1
   };
+}
+
+// Hóa đơn công khai cho trang quét QR (không lộ userId, không lộ payToken khác)
+function toBill(record) {
+  const rentalFee = Number(record.rental_fee) || 0;
+  const lateFee = Number(record.late_fee) || 0;
+  return {
+    id: record.id,
+    bookTitle: record.book_title,
+    status: record.status,
+    dueDate: record.due_date,
+    returnDate: record.return_date,
+    rentalFee,
+    lateFee,
+    totalFee: rentalFee + lateFee,
+    paid: Number(record.paid) === 1,
+    paidAt: record.paid_at
+  };
+}
+
+function newPayToken() {
+  return crypto.randomBytes(16).toString('hex');
 }
 
 function internalHeaders() {
@@ -62,6 +103,7 @@ async function start() {
       const status = text(req.query.status);
       if (status && !['PENDING', 'BORROWING', 'RETURNED', 'REJECTED'].includes(status)) return res.status(400).json({ error: 'Trạng thái lọc không hợp lệ' });
       const rows = await db.all(`SELECT * FROM borrow_records WHERE user_id = ? ${status ? 'AND status = ?' : ''} ORDER BY request_date DESC, id DESC`, status ? [identity.id, status] : [identity.id]);
+      // Độc giả thấy payToken của CHÍNH mình để tự mở link thanh toán QR
       res.json(rows.map(toApi));
     } catch (error) { next(error); }
   });
@@ -79,8 +121,9 @@ async function start() {
       if (bookResponse.status !== 200) return res.status(bookResponse.status === 404 ? 404 : 502).json({ error: bookResponse.body.error || 'Không thể kiểm tra thông tin sách' });
       const book = bookResponse.body;
       const result = await db.run('INSERT INTO borrow_records (user_id, user_name, book_id, book_title, note) VALUES (?, ?, ?, ?, ?)', [identity.id, identity.fullName, book.id, book.title, note || null]);
-      const record = await db.get('SELECT * FROM borrow_records WHERE id = ?', [result.lastID]);
-      res.status(201).json(toApi(record));
+      const created = toApi(await db.get('SELECT * FROM borrow_records WHERE id = ?', [result.lastID]));
+      delete created.payToken;
+      res.status(201).json(created);
     } catch (error) { next(error); }
   });
 
@@ -93,8 +136,11 @@ async function start() {
       if (record.status !== 'PENDING') return res.status(409).json({ error: 'Chỉ có thể duyệt phiếu đang chờ' });
       const reserved = await bookRequest('POST', `/books/${record.book_id}/reserve`);
       if (reserved.status !== 200) return res.status(reserved.status === 409 ? 409 : 502).json({ error: reserved.status === 409 ? 'Sách đã hết, chưa thể duyệt phiếu' : (reserved.body.error || 'Không thể giữ sách') });
+      // Chốt giá mượn theo giá sách tại lúc duyệt (đổi giá sau không ảnh hưởng phiếu cũ)
+      // + cấp token thanh toán cho QR (mỗi phiếu 1 token riêng)
+      const rentalFee = Math.max(0, Number(reserved.body.rental_price) || 0);
       try {
-        await db.run("UPDATE borrow_records SET status = 'BORROWING', approved_date = CURRENT_TIMESTAMP, due_date = ? WHERE id = ? AND status = 'PENDING'", [plusDays(14), record.id]);
+        await db.run("UPDATE borrow_records SET status = 'BORROWING', approved_date = CURRENT_TIMESTAMP, due_date = ?, rental_fee = ?, pay_token = ? WHERE id = ? AND status = 'PENDING'", [plusDays(14), rentalFee, newPayToken(), record.id]);
       } catch (error) {
         await bookRequest('POST', `/books/${record.book_id}/release`);
         throw error;
@@ -140,13 +186,82 @@ async function start() {
       if (record.status !== 'BORROWING') return res.status(409).json({ error: 'Chỉ có thể trả phiếu đang mượn' });
       const released = await bookRequest('POST', `/books/${record.book_id}/release`);
       if (released.status !== 200) return res.status(502).json({ error: released.body.error || 'Không thể cập nhật tồn kho khi trả' });
+      // Chốt phạt quá hạn tại lúc trả: số ngày trễ × 2.000đ
+      const days = lateDays(record.due_date);
+      const lateFee = days * LATE_FEE_PER_DAY;
       try {
-        await db.run("UPDATE borrow_records SET status = 'RETURNED', return_date = CURRENT_TIMESTAMP WHERE id = ? AND status = 'BORROWING'", [record.id]);
+        await db.run("UPDATE borrow_records SET status = 'RETURNED', return_date = CURRENT_TIMESTAMP, late_fee = ? WHERE id = ? AND status = 'BORROWING'", [lateFee, record.id]);
       } catch (error) {
         await bookRequest('POST', `/books/${record.book_id}/reserve`);
         throw error;
       }
       res.json(toApi(await db.get('SELECT * FROM borrow_records WHERE id = ?', [record.id])));
+    } catch (error) { next(error); }
+  });
+
+  app.post('/borrows/:id/pay', async (req, res, next) => {
+    if (!requireRoles(req, res, staffRoles)) return;
+    try {
+      if (!validId(req.params.id)) return res.status(400).json({ error: 'Mã phiếu không hợp lệ' });
+      const record = await db.get('SELECT * FROM borrow_records WHERE id = ?', [Number(req.params.id)]);
+      if (!record) return res.status(404).json({ error: 'Không tìm thấy phiếu mượn' });
+      if (record.status !== 'RETURNED') return res.status(409).json({ error: 'Chỉ thu tiền phiếu đã trả sách' });
+      if (Number(record.paid) === 1) return res.status(409).json({ error: 'Phiếu này đã thu tiền' });
+      if ((Number(record.rental_fee) || 0) + (Number(record.late_fee) || 0) === 0) {
+        return res.status(409).json({ error: 'Phiếu không phát sinh phí' });
+      }
+      await db.run('UPDATE borrow_records SET paid = 1, paid_at = CURRENT_TIMESTAMP WHERE id = ?', [record.id]);
+      res.json(toApi(await db.get('SELECT * FROM borrow_records WHERE id = ?', [record.id])));
+    } catch (error) { next(error); }
+  });
+
+  // Gia hạn: độc giả tự gia hạn phiếu BORROWING của mình 1 lần duy nhất (+7 ngày),
+  // không áp dụng phiếu đã quá hạn
+  app.post('/borrows/:id/renew', async (req, res, next) => {
+    const identity = requireRoles(req, res, ['READER']);
+    if (!identity) return;
+    try {
+      if (!validId(req.params.id)) return res.status(400).json({ error: 'Mã phiếu không hợp lệ' });
+      const record = await db.get('SELECT * FROM borrow_records WHERE id = ?', [Number(req.params.id)]);
+      if (!record) return res.status(404).json({ error: 'Không tìm thấy phiếu mượn' });
+      if (record.user_id !== identity.id) return res.status(403).json({ error: 'Bạn chỉ được gia hạn phiếu của chính mình' });
+      if (record.status !== 'BORROWING') return res.status(409).json({ error: 'Chỉ gia hạn phiếu đang mượn' });
+      if (Number(record.renewed) === 1) return res.status(409).json({ error: 'Mỗi phiếu chỉ được gia hạn một lần' });
+      if (lateDays(record.due_date) > 0) return res.status(409).json({ error: 'Phiếu đã quá hạn nên không gia hạn được' });
+      const due = new Date(new Date(record.due_date).getTime() + 7 * 86400000).toISOString();
+      await db.run('UPDATE borrow_records SET due_date = ?, renewed = 1 WHERE id = ? AND status = ?', [due, record.id, 'BORROWING']);
+      res.json(toApi(await db.get('SELECT * FROM borrow_records WHERE id = ?', [record.id])));
+    } catch (error) { next(error); }
+  });
+
+  // ---- Kênh thanh toán QR fake (công khai, xác thực bằng pay_token, phục vụ demo) ----
+  app.get('/pay/:id', async (req, res, next) => {
+    try {
+      if (!validId(req.params.id)) return res.status(400).json({ error: 'Mã phiếu không hợp lệ' });
+      const record = await db.get('SELECT * FROM borrow_records WHERE id = ?', [Number(req.params.id)]);
+      if (!record || !record.pay_token || record.pay_token !== text(req.query.t)) {
+        return res.status(404).json({ error: 'Liên kết thanh toán không hợp lệ hoặc đã hết hạn' });
+      }
+      res.json(toBill(record));
+    } catch (error) { next(error); }
+  });
+
+  app.post('/pay/:id/confirm', async (req, res, next) => {
+    try {
+      if (!validId(req.params.id)) return res.status(400).json({ error: 'Mã phiếu không hợp lệ' });
+      const token = text((req.body && req.body.t) || req.query.t);
+      const record = await db.get('SELECT * FROM borrow_records WHERE id = ?', [Number(req.params.id)]);
+      if (!record || !record.pay_token || record.pay_token !== token) {
+        return res.status(404).json({ error: 'Liên kết thanh toán không hợp lệ hoặc đã hết hạn' });
+      }
+      if (record.status !== 'RETURNED') return res.status(409).json({ error: 'Phiếu chưa trả sách nên chưa thể thanh toán' });
+      if ((Number(record.rental_fee) || 0) + (Number(record.late_fee) || 0) === 0) {
+        return res.status(409).json({ error: 'Phiếu không phát sinh phí' });
+      }
+      if (Number(record.paid) !== 1) {
+        await db.run('UPDATE borrow_records SET paid = 1, paid_at = CURRENT_TIMESTAMP WHERE id = ?', [record.id]);
+      }
+      res.json(toBill(await db.get('SELECT * FROM borrow_records WHERE id = ?', [record.id])));
     } catch (error) { next(error); }
   });
 

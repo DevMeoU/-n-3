@@ -65,6 +65,12 @@ function validateBook(body, isUpdate = false) {
     result.quantity = quantity;
   }
   if (!isUpdate && result.quantity === undefined) return { error: 'Số lượng là bắt buộc' };
+  if (body.rental_price !== undefined) {
+    const price = Number(body.rental_price);
+    if (!Number.isInteger(price) || price < 0) return { error: 'Giá mượn phải là số nguyên không âm (VND)' };
+    result.rental_price = price;
+  }
+  if (!isUpdate && result.rental_price === undefined) result.rental_price = 0;
   return { value: result };
 }
 
@@ -147,7 +153,7 @@ async function start() {
       const validated = validateBook(req.body);
       if (validated.error) return res.status(400).json({ error: validated.error });
       const book = validated.value;
-      const result = await db.run('INSERT INTO books (title, author, category, quantity, available) VALUES (?, ?, ?, ?, ?)', [book.title, book.author, book.category, book.quantity, book.quantity]);
+      const result = await db.run('INSERT INTO books (title, author, category, quantity, available, rental_price) VALUES (?, ?, ?, ?, ?, ?)', [book.title, book.author, book.category, book.quantity, book.quantity, book.rental_price]);
       res.status(201).json(await db.get('SELECT * FROM books WHERE id = ?', [result.lastID]));
     } catch (error) { next(error); }
   });
@@ -163,7 +169,8 @@ async function start() {
       const nextBook = { ...current, ...validated.value };
       if (nextBook.quantity < current.quantity - current.available) return res.status(409).json({ error: 'Số lượng mới nhỏ hơn số bản đang được mượn' });
       nextBook.available = nextBook.quantity - (current.quantity - current.available);
-      await db.run('UPDATE books SET title = ?, author = ?, category = ?, quantity = ?, available = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [nextBook.title, nextBook.author, nextBook.category, nextBook.quantity, nextBook.available, current.id]);
+      if (nextBook.rental_price === undefined || nextBook.rental_price === null) nextBook.rental_price = 0;
+      await db.run('UPDATE books SET title = ?, author = ?, category = ?, quantity = ?, available = ?, rental_price = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [nextBook.title, nextBook.author, nextBook.category, nextBook.quantity, nextBook.available, nextBook.rental_price, current.id]);
       res.json(await db.get('SELECT * FROM books WHERE id = ?', [current.id]));
     } catch (error) { next(error); }
   });

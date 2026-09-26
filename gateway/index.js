@@ -14,7 +14,9 @@ const routes = [
   { prefix: '/api/users', port: () => config.userServicePort, roles: ['ADMIN'] },
   // DELETE /api/books chỉ có endpoint gỡ ảnh bìa nên mở cho thủ thư (book-service không có xóa sách)
   { prefix: '/api/books', port: () => config.bookServicePort, roles: ['READER', 'LIBRARIAN', 'ADMIN'], methodRoles: { POST: ['LIBRARIAN', 'ADMIN'], PUT: ['LIBRARIAN', 'ADMIN'], DELETE: ['LIBRARIAN', 'ADMIN'] } },
-  { prefix: '/api/borrows', port: () => config.borrowServicePort, roles: ['READER', 'LIBRARIAN', 'ADMIN'] }
+  { prefix: '/api/borrows', port: () => config.borrowServicePort, roles: ['READER', 'LIBRARIAN', 'ADMIN'] },
+  // Giữ nguyên '/pay' khi forward (borrow-service định nghĩa GET/POST /pay/:id)
+  { prefix: '/api/pay', port: () => config.borrowServicePort, public: true }
 ];
 
 function allowedRoles(req) {
@@ -23,7 +25,9 @@ function allowedRoles(req) {
   if (pathName === '/api/borrows/my' && req.method === 'GET') return ['READER'];
   if (pathName === '/api/borrows' && req.method === 'POST') return ['READER'];
   if (/^\/api\/borrows\/\d+\/cancel$/.test(pathName)) return ['READER'];
-  if (/^\/api\/borrows\/\d+\/(approve|reject|return)$/.test(pathName)) return ['LIBRARIAN', 'ADMIN'];
+  if (/^\/api\/borrows\/\d+\/renew$/.test(pathName)) return ['READER'];
+  if (/^\/api\/borrows\/\d+\/(approve|reject|return|pay)$/.test(pathName)) return ['LIBRARIAN', 'ADMIN'];
+  if (pathName === '/api/users/me' || pathName === '/api/users/me/password') return ['READER', 'LIBRARIAN', 'ADMIN'];
   return null;
 }
 

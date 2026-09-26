@@ -1,7 +1,7 @@
 // views/books.js — catalog sách: tìm kiếm + mượn (reader) / thêm-sửa (thủ thư)
-import { state, can } from '../store.js';
+import { state, can, LATE_FEE_PER_DAY } from '../store.js';
 import { api } from '../api.js';
-import { $, layout, esc, loading, errorCard, stockBadge, coverImg, coverSlug, showModal, closeModal, toast } from '../ui.js';
+import { $, layout, esc, loading, errorCard, stockBadge, coverImg, coverSlug, fmtVND, showModal, closeModal, toast } from '../ui.js';
 
 export async function booksView(router) {
   layout(loading(), router);
@@ -58,7 +58,7 @@ function bookTable(books) {
     <div class="table-wrap rounded-xl border border-slate-200 bg-white">
       <table class="w-full text-left text-sm">
         <thead class="bg-slate-50 text-slate-600">
-          <tr><th class="px-4 py-3">Sách</th><th class="px-4 py-3">Tác giả</th><th class="px-4 py-3">Thể loại</th><th class="px-4 py-3">Tồn kho</th><th class="px-4 py-3 text-right">Thao tác</th></tr>
+          <tr><th class="px-4 py-3">Sách</th><th class="px-4 py-3">Tác giả</th><th class="px-4 py-3">Thể loại</th><th class="px-4 py-3">Giá mượn</th><th class="px-4 py-3">Tồn kho</th><th class="px-4 py-3 text-right">Thao tác</th></tr>
         </thead>
         <tbody>
           ${books.length ? books.map((book) => `
@@ -71,9 +71,10 @@ function bookTable(books) {
               </td>
               <td class="px-4 py-3">${esc(book.author)}</td>
               <td class="px-4 py-3">${esc(book.category)}</td>
+              <td class="px-4 py-3 font-medium">${fmtVND(book.rental_price)}</td>
               <td class="px-4 py-3">${stockBadge(book)}</td>
               <td class="px-4 py-3 text-right">${bookAction(book)}</td>
-            </tr>`).join('') : '<tr><td colspan="5" class="px-4 py-10 text-center text-slate-500">Không tìm thấy sách phù hợp.</td></tr>'}
+            </tr>`).join('') : '<tr><td colspan="6" class="px-4 py-10 text-center text-slate-500">Không tìm thấy sách phù hợp.</td></tr>'}
         </tbody>
       </table>
     </div>`;
@@ -119,6 +120,7 @@ function bookModal(book) {
       <label class="text-sm font-medium">Tác giả<input required name="author" maxlength="120" value="${esc(book?.author)}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"></label>
       <label class="text-sm font-medium">Thể loại<input required name="category" maxlength="80" value="${esc(book?.category)}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"></label>
       <label class="text-sm font-medium">Số lượng<input required name="quantity" type="number" min="1" value="${book?.quantity || ''}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"></label>
+      <label class="text-sm font-medium">Giá mượn (VND/lượt, 0 = miễn phí)<input required name="rental_price" type="number" min="0" step="1000" value="${book?.rental_price ?? 0}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"></label>
       <button class="rounded-lg bg-blue-700 px-4 py-2.5 font-semibold text-white">${editing ? 'Lưu thay đổi' : 'Thêm sách'}</button>
     </form>`, () => {
     const fileInput = $('#book-cover-file');
@@ -178,7 +180,8 @@ function bookModal(book) {
           title: form.get('title'),
           author: form.get('author'),
           category: form.get('category'),
-          quantity: Number(form.get('quantity'))
+          quantity: Number(form.get('quantity')),
+          rental_price: Number(form.get('rental_price'))
         };
         const saved = await api(`/books${editing ? `/${book.id}` : ''}`, editing ? 'PUT' : 'POST', payload);
         const dataUrl = await readFile();
@@ -216,6 +219,7 @@ function bookDetailModal(book) {
         <p class="text-lg font-bold leading-snug">${esc(book.title)}</p>
         <p class="text-slate-600">Tác giả: <b class="text-slate-900">${esc(book.author)}</b></p>
         <p><span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">${esc(book.category)}</span></p>
+        <p class="text-slate-600">Giá mượn: <b class="text-slate-900">${fmtVND(book.rental_price)}</b>/lượt · Quá hạn phạt <b class="text-slate-900">${fmtVND(LATE_FEE_PER_DAY)}</b>/ngày</p>
         <p>${stockBadge(book)}</p>
         <dl class="grid grid-cols-3 gap-2 text-center">
           <div class="rounded-lg bg-slate-50 p-2"><dt class="text-xs text-slate-500">Tổng số</dt><dd class="text-lg font-bold">${book.quantity}</dd></div>

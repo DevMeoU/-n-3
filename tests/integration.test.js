@@ -48,6 +48,18 @@ function call(method, requestPath, body, token) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function expect(condition, message) { if (!condition) throw new Error(message); }
+// Sửa trực tiếp DB test (giả lập quá hạn mà không cần đợi 14 ngày)
+function dbExec(sql, params = []) {
+  const sqlite3 = require('sqlite3').verbose();
+  return new Promise((resolve, reject) => {
+    const db = new sqlite3.Database(path.join(dataDir, 'borrow-service-test.db'));
+    db.run(sql, params, function onRun(error) {
+      db.close();
+      if (error) return reject(error);
+      resolve();
+    });
+  });
+}
 async function login(username, password = '123456') {
   const response = await call('POST', '/api/auth/login', { username, password });
   expect(response.status === 200 && response.data.token, `Đăng nhập ${username}`);
@@ -185,6 +197,94 @@ async function login(username, password = '123456') {
     await test('Duyệt phiếu REJECTED bị chặn', async () => {
       const r = await call('POST', `/api/borrows/${pendingId}/approve`, undefined, librarian.token);
       expect(r.status === 409, 'Duyệt REJECTED phải lỗi');
+    });
+
+    // ---- Giá mượn, phí, gia hạn, hồ sơ, thanh toán QR ----
+    let pricedBookId;
+    await test('Giá mượn: validate và cập nhật', async () => {
+      const bad = await call('POST', '/api/books', { title: 'Sách giá sai', author: 'QA', category: 'Test', quantity: 1, rental_price: -5 }, librarian.token);
+      expect(bad.status === 400, 'Giá âm phải lỗi 400');
+      const created = await call('POST', '/api/books', { title: `Sách có phí ${Date.now()}`, author: 'QA', category: 'Công nghệ', quantity: 2, rental_price: 10000 }, librarian.token);
+      expect(created.status === 201 && created.data.rental_price === 10000, 'Không lưu được giá mượn');
+      pricedBookId = created.data.id;
+      const updated = await call('PUT', `/api/books/${pricedBookId}`, { rental_price: 12000 }, librarian.token);
+      expect(updated.status === 200 && updated.data.rental_price === 12000, 'Không sửa được giá');
+    });
+    let feeBorrowId;
+    await test('Duyệt chốt giá mượn, trả đúng hạn không phạt', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      feeBorrowId = created.data.id;
+      const approved = await call('POST', `/api/borrows/${feeBorrowId}/approve`, undefined, librarian.token);
+      expect(approved.status === 200 && approved.data.rentalFee === 12000, 'Không chốt giá khi duyệt');
+      expect(typeof approved.data.payToken === 'string' && approved.data.payToken.length >= 16, 'Thiếu payToken');
+      const returned = await call('POST', `/api/borrows/${feeBorrowId}/return`, undefined, librarian.token);
+      expect(returned.status === 200 && returned.data.lateFee === 0 && returned.data.totalFee === 12000 && !returned.data.paid, 'Phí trả đúng hạn sai');
+    });
+    await test('Quá hạn 3 ngày phạt 6000đ', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      const id = created.data.id;
+      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
+      await dbExec('UPDATE borrow_records SET due_date = ? WHERE id = ?', [new Date(Date.now() - 2.5 * 86400000).toISOString(), id]);
+      const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      expect(returned.status === 200 && returned.data.lateFee === 6000 && returned.data.totalFee === 18000, `Phạt quá hạn sai: ${JSON.stringify(returned.data)}`);
+    });
+    await test('Gia hạn: +7 ngày, 1 lần, quá hạn bị chặn', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      const id = created.data.id;
+      const approved = await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
+      const before = new Date(approved.data.dueDate).getTime();
+      const renewed = await call('POST', `/api/borrows/${id}/renew`, undefined, reader.token);
+      expect(renewed.status === 200 && renewed.data.renewed === true, 'Không gia hạn được');
+      expect(new Date(renewed.data.dueDate).getTime() - before === 7 * 86400000, 'Gia hạn phải +7 ngày');
+      const twice = await call('POST', `/api/borrows/${id}/renew`, undefined, reader.token);
+      expect(twice.status === 409, 'Gia hạn lần 2 phải bị chặn');
+      await dbExec('UPDATE borrow_records SET due_date = ? WHERE id = ?', [new Date(Date.now() - 86400000).toISOString(), id]);
+      const late = await call('POST', `/api/borrows/${id}/renew`, undefined, reader.token);
+      expect(late.status === 409, 'Quá hạn phải bị chặn gia hạn');
+      await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+    });
+    await test('Thanh toán: QR công khai + thu tiền mặt', async () => {
+      const all = await call('GET', '/api/borrows', undefined, librarian.token);
+      const target = all.data.find((r) => r.id === feeBorrowId);
+      expect(target && target.payToken, 'Thiếu payToken ở API thủ thư');
+      const mine = await call('GET', '/api/borrows/my', undefined, reader.token);
+      const mineTarget = mine.data.find((r) => r.id === feeBorrowId);
+      expect(mineTarget && mineTarget.payToken, 'Độc giả phải thấy link trả phí của mình');
+      const badLink = await call('GET', `/api/pay/${feeBorrowId}?t=sai-token`, undefined, undefined);
+      expect(badLink.status === 404, 'Link sai phải 404');
+      const bill = await call('GET', `/api/pay/${feeBorrowId}?t=${target.payToken}`, undefined, undefined);
+      expect(bill.status === 200 && bill.data.totalFee === 12000 && !bill.data.paid && !('payToken' in bill.data) && !('userId' in bill.data), 'Bill công khai sai');
+      const readerPay = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, reader.token);
+      expect(readerPay.status === 403, 'Reader không được thu tiền mặt');
+      const cash = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, librarian.token);
+      expect(cash.status === 200 && cash.data.paid === true, 'Không thu được tiền');
+      const again = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, librarian.token);
+      expect(again.status === 409, 'Thu 2 lần phải bị chặn');
+    });
+    await test('QR confirm: mở link + bấm thanh toán', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      const id = created.data.id;
+      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
+      await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      const all = await call('GET', '/api/borrows', undefined, librarian.token);
+      const token = all.data.find((r) => r.id === id).payToken;
+      const done = await call('POST', `/api/pay/${id}/confirm`, { t: token }, undefined);
+      expect(done.status === 200 && done.data.paid === true, 'Xác nhận QR thất bại');
+    });
+    await test('Hồ sơ: xem, đổi tên, đổi mật khẩu', async () => {
+      const me = await call('GET', '/api/users/me', undefined, reader.token);
+      expect(me.status === 200 && me.data.username === 'reader', 'Không xem được hồ sơ');
+      const renamed = await call('PUT', '/api/users/me', { fullName: 'Bạn Đọc QA' }, reader.token);
+      expect(renamed.status === 200 && renamed.data.fullName === 'Bạn Đọc QA', 'Không đổi được tên');
+      const badPass = await call('POST', '/api/users/me/password', { oldPassword: 'sai', newPassword: 'moi123456' }, reader.token);
+      expect(badPass.status === 401, 'Sai mật khẩu cũ phải 401');
+      const changed = await call('POST', '/api/users/me/password', { oldPassword: '123456', newPassword: 'moi123456' }, reader.token);
+      expect(changed.status === 200, 'Không đổi được mật khẩu');
+      const relogin = await call('POST', '/api/auth/login', { username: 'reader', password: 'moi123456' });
+      expect(relogin.status === 200, 'Mật khẩu mới không đăng nhập được');
+      await call('POST', '/api/users/me/password', { oldPassword: 'moi123456', newPassword: '123456' }, relogin.data.token);
+      const back = await call('POST', '/api/auth/login', { username: 'reader', password: '123456' });
+      expect(back.status === 200, 'Không trả được mật khẩu cũ');
     });
 
     console.log(`\nPASS: ${passed} test cases`);
