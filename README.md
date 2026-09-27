@@ -96,9 +96,10 @@ PENDING --thủ thư từ chối / độc giả hủy--> REJECTED
 ```
 
 - Reader tạo PENDING, chưa trừ tồn kho.
-- Librarian/Admin duyệt mới gọi Book Service `reserve`, tính hạn trả 14 ngày và chốt giá mượn (`rental_fee`) + cấp `pay_token` QR.
+- Librarian/Admin duyệt mới gọi Book Service `reserve`, tính hạn trả 14 ngày, chốt giá mượn theo **giá/ngày** hiện tại + cấp `pay_token` QR.
+- Tiền mượn = giá/ngày × số ngày đã mượn (ngày đầu tính luôn) + phạt quá hạn 2.000đ/ngày; thu nhiều lần lũy kế theo `paid_amount`.
+- **Còn dư nợ thì KHÔNG được xác nhận trả** (`409` kèm số nợ) — thu hết (QR/tiền mặt) trước rồi trả sau. Trả thành công gọi `release`.
 - Độc giả được gia hạn 1 lần (+7 ngày) nếu chưa quá hạn.
-- Chỉ `BORROWING` được trả; trả thành công gọi `release` và chốt phạt quá hạn (`late_fee` = số ngày trễ × 2.000đ).
 - Thu tiền: thủ thư bấm "Thu tiền mặt" (`POST .../pay`) hoặc độc giả quét QR mở link `#/pay/:id?t=` rồi bấm Thanh toán (fake, demo).
 - Chỉ Book Service sửa `available`, luôn bảo đảm `0 <= available <= quantity`.
 

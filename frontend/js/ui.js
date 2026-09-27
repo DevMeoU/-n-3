@@ -19,30 +19,33 @@ export function fmtVND(value) {
 }
 
 export function feeBadge(record) {
-  const rental = Number(record.rentalFee) || 0;
+  const rate = Number(record.rentalFee) || 0;
+  const days = Number(record.daysBorrowed) || 0;
+  const accrued = Number(record.accruedRental ?? rate) || 0;
   const late = Number(record.lateFee) || 0;
+  const paid = Number(record.paidAmount) || 0;
+  const due = Number(record.payableNow ?? (accrued + late - paid)) || 0;
+  if (record.status !== 'BORROWING' && record.status !== 'RETURNED') {
+    return '<span class="text-slate-400">—</span>';
+  }
+  if (!rate) return '<span class="text-slate-400">Miễn phí</span>';
+  const dayLine = days > 0
+    ? `<small class="block font-normal text-slate-500">${days} ngày × ${fmtVND(rate)}</small>` : '';
   if (record.status === 'BORROWING') {
-    const eff = rental || ((typeof window !== 'undefined' && window.__bookPrices) || {})[record.bookId] || 0;
-    if (!eff) return '<span class="text-slate-400">Miễn phí</span>';
-    return `<span class="font-semibold">${fmtVND(eff)}</span>` +
-      (record.paidRental
-        ? '<small class="mt-0.5 block font-semibold text-emerald-700">Đã thu trước</small>'
+    return `<span class="font-semibold">${fmtVND(accrued)}</span>${dayLine}` +
+      (paid > 0
+        ? `<small class="mt-0.5 block font-semibold text-emerald-700">Đã thu ${fmtVND(paid)} · còn ${fmtVND(due)}</small>`
         : '<small class="mt-0.5 block font-semibold text-amber-700">Thu từ ngày mượn</small>');
   }
-  const prices = (typeof window !== 'undefined' && window.__bookPrices) || {};
-  const effRental = rental || prices[record.bookId] || 0;
-  const prepaid = record.paidRental ? effRental : 0;
-  const due = effRental + late - prepaid;
-  const total = effRental + late;
-  if (!total) return '<span class="text-slate-400">Miễn phí</span>';
+  const total = accrued + late;
   if (record.paid || due === 0) {
-    return `<span class="font-semibold">${fmtVND(total)}</span><small class="mt-0.5 block font-semibold text-emerald-700">Đã thu${prepaid && late === 0 ? ' trước' : ''}</small>`;
+    return `<span class="font-semibold">${fmtVND(total)}</span><small class="mt-0.5 block font-semibold text-emerald-700">Đã thu</small>`;
   }
-  const preLine = prepaid > 0
-    ? `<small class="block font-normal text-slate-500">đã thu trước ${fmtVND(prepaid)}</small>` : '';
+  const preLine = paid > 0
+    ? `<small class="block font-normal text-slate-500">đã thu ${fmtVND(paid)}</small>` : '';
   const lateLine = late > 0
     ? `<small class="block font-normal text-slate-500">gồm phạt ${fmtVND(late)}</small>` : '';
-  return `<span class="font-semibold">${fmtVND(due)}</span>${preLine}${lateLine}<small class="mt-0.5 block font-semibold text-amber-700">Chưa thu</small>`;
+  return `<span class="font-semibold">${fmtVND(due)}</span>${dayLine}${preLine}${lateLine}<small class="mt-0.5 block font-semibold text-amber-700">Chưa thu</small>`;
 }
 
 export function toast(message, type = 'success') {

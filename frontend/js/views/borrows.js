@@ -99,10 +99,13 @@ function rentalUnpaid(r) {
 }
 
 function remainderOf(r) {
-  if (r.status === 'BORROWING') return rentalUnpaid(r) ? effectiveRental(r) : 0;
-  if (r.status !== 'RETURNED' || r.paid) return 0;
-  const rental = r.paidRental ? 0 : effectiveRental(r);
-  return rental + (Number(r.lateFee) || 0);
+  if (r.status !== 'BORROWING' && r.status !== 'RETURNED') return 0;
+  // Ưu tiên số dư server tính (đã gồm giá/ngày + phạt − đã thu)
+  if (typeof r.payableNow === 'number') return Math.max(0, r.payableNow);
+  const rental = Number(r.accruedRental ?? r.rentalFee) || 0;
+  const late = Number(r.lateFee) || 0;
+  const paid = Number(r.paidAmount) || 0;
+  return Math.max(0, rental + late - paid);
 }
 
 function canPay(r) {
@@ -160,23 +163,28 @@ function bindBorrowActions() {
 }
 
 function estimateFee(record) {
-  // Phiếu cũ chưa chốt giá (rentalFee = 0) thì ước tính theo giá sách hiện tại.
-  // Đã thu trước thì trừ ra, chỉ còn phải thu phần dư.
-  const rental = Number(record.rentalFee) || (window.__bookPrices || {})[record.bookId] || 0;
-  const prepaid = record.paidRental ? rental : 0;
-  let days = 0;
+  // Ước tính theo giá/ngày × số ngày đã mượn (tối thiểu 1 ngày) + phạt quá hạn − đã thu.
+  // Phiếu cũ chưa chốt giá thì lấy theo giá sách hiện tại.
+  const rate = Number(record.rentalFee) || (window.__bookPrices || {})[record.bookId] || 0;
+  let borrowDays = 0;
+  if (record.approvedDate) {
+    borrowDays = Math.max(1, Math.ceil((Date.now() - new Date(record.approvedDate).getTime()) / 86400000));
+  }
+  const rental = rate * borrowDays;
+  const paid = Number(record.paidAmount) || 0;
+  let lateDays = 0;
   if (record.dueDate) {
     const diff = Date.now() - new Date(record.dueDate).getTime();
-    if (diff > 0) days = Math.ceil(diff / 86400000);
+    if (diff > 0) lateDays = Math.ceil(diff / 86400000);
   }
-  const late = days * LATE_FEE_PER_DAY;
-  return { rental, prepaid, days, late, total: rental + late - prepaid };
+  const late = lateDays * LATE_FEE_PER_DAY;
+  return { rate, borrowDays, rental, paid, days: lateDays, late, total: Math.max(0, rental + late - paid) };
 }
 
 function confirmBorrowAction(record, action) {
   const id = record.id;
   const config = {
-    approve: ['Duyệt phiếu mượn', `Duyệt phiếu sẽ giảm tồn kho một bản. Giá mượn chốt theo giá sách hiện tại: <b>${fmtVND((window.__bookPrices || {})[record.bookId] ?? state.books.find((b) => b.id === record.bookId)?.rental_price)}</b>/lượt.`],
+    approve: ['Duyệt phiếu mượn', `Duyệt phiếu sẽ giảm tồn kho một bản. Giá mượn tính theo ngày: <b>${fmtVND((window.__bookPrices || {})[record.bookId] ?? state.books.find((b) => b.id === record.bookId)?.rental_price)}</b>/ngày, ngày đầu tính luôn.`],
     reject: ['Từ chối yêu cầu', 'Nhập lý do để độc giả biết.'],
     cancel: ['Hủy yêu cầu', 'Yêu cầu sẽ được chuyển sang trạng thái đã hủy.'],
     renew: ['Gia hạn mượn sách', `Hạn trả dời thêm <b>7 ngày</b> (từ ${fmt(record.dueDate)}). Mỗi phiếu chỉ gia hạn <b>1 lần</b>, phiếu quá hạn không gia hạn được.`],
@@ -192,16 +200,24 @@ function confirmBorrowAction(record, action) {
     </div>
     <p class="mt-4 text-slate-600">${config[1]}</p>
     ${fee ? `<div class="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
-      <p class="flex justify-between"><span>Tiền mượn sách</span><b>${fmtVND(fee.rental)}</b></p>
+      <p class="flex justify-between"><span>Tiền mượn sách (${fee.borrowDays} ngày × ${fmtVND(fee.rate)})</span><b>${fmtVND(fee.rental)}</b></p>
       <p class="flex justify-between"><span>Phạt quá hạn ${fee.days > 0 ? `(${fee.days} ngày × ${fmtVND(LATE_FEE_PER_DAY)})` : '(đúng hạn)'}</span><b>${fmtVND(fee.late)}</b></p>
-      ${fee.prepaid > 0 ? `<p class="flex justify-between text-emerald-700"><span>Đã thu trước</span><b>−${fmtVND(fee.prepaid)}</b></p>` : ''}
+      ${fee.paid > 0 ? `<p class="flex justify-between text-emerald-700"><span>Đã thu</span><b>−${fmtVND(fee.paid)}</b></p>` : ''}
       <p class="flex justify-between border-t border-slate-200 pt-2 text-base"><span class="font-semibold">Còn phải thu</span><b class="text-rose-700">${fmtVND(fee.total)}</b></p>
+      ${action === 'return' && fee.total > 0 ? `<p class="rounded-lg bg-amber-50 p-2.5 text-amber-800">Còn dư nợ ${fmtVND(fee.total)} — thu hết (QR/tiền mặt) trước rồi mới được xác nhận trả.</p>` : ''}
     </div>` : ''}
     ${action === 'reject' ? '<textarea id="reject-reason" class="mt-4 w-full rounded-lg border border-slate-300 p-3" minlength="3" placeholder="Lý do từ chối" required></textarea>' : ''}
     <div class="mt-6 flex justify-end gap-3">
       <button data-close class="rounded-lg border border-slate-300 px-4 py-2">Quay lại</button>
-      <button id="confirm-action" class="rounded-lg ${action === 'return' || action === 'pay' ? 'bg-emerald-700' : action === 'cancel' || action === 'reject' ? 'bg-rose-600' : 'bg-blue-700'} px-4 py-2 font-semibold text-white">Xác nhận</button>
+      ${action === 'return' && fee && fee.total > 0
+        ? '<button id="collect-first" class="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">Thu ngay</button>'
+        : ''}
+      <button id="confirm-action" ${action === 'return' && fee && fee.total > 0 ? 'disabled title="Còn dư nợ, thu hết trước"' : ''} class="rounded-lg ${action === 'return' || action === 'pay' ? 'bg-emerald-700' : action === 'cancel' || action === 'reject' ? 'bg-rose-600' : 'bg-blue-700'} px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">Xác nhận</button>
     </div>`, () => {
+    const collectBtn = $('#collect-first');
+    if (collectBtn) {
+      collectBtn.onclick = () => paymentModal(record);
+    }
     $('#confirm-action').onclick = async () => {
       const reason = $('#reject-reason')?.value.trim();
       if (action === 'reject' && (!reason || reason.length < 3)) {

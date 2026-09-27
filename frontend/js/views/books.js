@@ -219,7 +219,7 @@ function bookDetailModal(book) {
         <p class="text-lg font-bold leading-snug">${esc(book.title)}</p>
         <p class="text-slate-600">Tác giả: <b class="text-slate-900">${esc(book.author)}</b></p>
         <p><span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">${esc(book.category)}</span></p>
-        <p class="text-slate-600">Giá mượn: <b class="text-slate-900">${fmtVND(book.rental_price)}</b>/lượt · Quá hạn phạt <b class="text-slate-900">${fmtVND(LATE_FEE_PER_DAY)}</b>/ngày</p>
+        <p class="text-slate-600">Giá mượn: <b class="text-slate-900">${fmtVND(book.rental_price)}</b>/ngày · Quá hạn phạt <b class="text-slate-900">${fmtVND(LATE_FEE_PER_DAY)}</b>/ngày (ngày đầu tính luôn)</p>
         <p>${stockBadge(book)}</p>
         <dl class="grid grid-cols-3 gap-2 text-center">
           <div class="rounded-lg bg-slate-50 p-2"><dt class="text-xs text-slate-500">Tổng số</dt><dd class="text-lg font-bold">${book.quantity}</dd></div>

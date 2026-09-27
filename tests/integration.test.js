@@ -212,22 +212,31 @@ async function login(username, password = '123456') {
       expect(updated.status === 200 && updated.data.rental_price === 12000, 'Không sửa được giá');
     });
     let feeBorrowId;
-    await test('Duyệt chốt giá mượn, trả đúng hạn không phạt', async () => {
+    await test('Duyệt chốt giá/ngày, chưa thu chặn trả', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
       feeBorrowId = created.data.id;
       const approved = await call('POST', `/api/borrows/${feeBorrowId}/approve`, undefined, librarian.token);
       expect(approved.status === 200 && approved.data.rentalFee === 12000, 'Không chốt giá khi duyệt');
+      expect(approved.data.daysBorrowed === 1 && approved.data.accruedRental === 12000 && approved.data.payableNow === 12000, 'Bảng phí sai');
       expect(typeof approved.data.payToken === 'string' && approved.data.payToken.length >= 16, 'Thiếu payToken');
+      const blocked = await call('POST', `/api/borrows/${feeBorrowId}/return`, undefined, librarian.token);
+      expect(blocked.status === 409 && blocked.data.due === 12000, `Chưa thu phải chặn trả: ${JSON.stringify(blocked.data)}`);
+      const paid = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, librarian.token);
+      expect(paid.status === 200 && paid.data.collected === 12000, 'Không thu được');
       const returned = await call('POST', `/api/borrows/${feeBorrowId}/return`, undefined, librarian.token);
-      expect(returned.status === 200 && returned.data.lateFee === 0 && returned.data.totalFee === 12000 && !returned.data.paid, 'Phí trả đúng hạn sai');
+      expect(returned.status === 200 && returned.data.lateFee === 0 && returned.data.totalFee === 12000 && returned.data.paid === true, 'Trả sau thu sai');
     });
-    await test('Quá hạn 3 ngày phạt 6000đ', async () => {
+    await test('Quá hạn: phạt theo ngày + chặn trả đến khi thu hết', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
       const id = created.data.id;
       await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
       await dbExec('UPDATE borrow_records SET due_date = ? WHERE id = ?', [new Date(Date.now() - 2.5 * 86400000).toISOString(), id]);
+      const blocked = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      expect(blocked.status === 409 && blocked.data.due === 18000, `Chặn trả sai: ${JSON.stringify(blocked.data)}`);
+      const paid = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(paid.status === 200 && paid.data.collected === 18000, 'Không thu được');
       const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
-      expect(returned.status === 200 && returned.data.lateFee === 6000 && returned.data.totalFee === 18000, `Phạt quá hạn sai: ${JSON.stringify(returned.data)}`);
+      expect(returned.status === 200 && returned.data.lateFee === 6000 && returned.data.totalFee === 18000 && returned.data.paid === true, `Phí sai: ${JSON.stringify(returned.data)}`);
     });
     await test('Gia hạn: +7 ngày, 1 lần, quá hạn bị chặn', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
@@ -242,46 +251,56 @@ async function login(username, password = '123456') {
       await dbExec('UPDATE borrow_records SET due_date = ? WHERE id = ?', [new Date(Date.now() - 86400000).toISOString(), id]);
       const late = await call('POST', `/api/borrows/${id}/renew`, undefined, reader.token);
       expect(late.status === 409, 'Quá hạn phải bị chặn gia hạn');
-      await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      await dbExec('UPDATE borrow_records SET due_date = ? WHERE id = ?', [new Date(Date.now() + 86400000).toISOString(), id]);
+      await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      expect(returned.status === 200 && returned.data.paid === true, 'Trả sau thu sai');
     });
     await test('Thanh toán: QR công khai + thu tiền mặt', async () => {
+      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
+      const id = created.data.id;
+      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
       const all = await call('GET', '/api/borrows', undefined, librarian.token);
-      const target = all.data.find((r) => r.id === feeBorrowId);
+      const target = all.data.find((r) => r.id === id);
       expect(target && target.payToken, 'Thiếu payToken ở API thủ thư');
       const mine = await call('GET', '/api/borrows/my', undefined, reader.token);
-      const mineTarget = mine.data.find((r) => r.id === feeBorrowId);
+      const mineTarget = mine.data.find((r) => r.id === id);
       expect(mineTarget && mineTarget.payToken, 'Độc giả phải thấy link trả phí của mình');
-      const badLink = await call('GET', `/api/pay/${feeBorrowId}?t=sai-token`, undefined, undefined);
+      const badLink = await call('GET', `/api/pay/${id}?t=sai-token`, undefined, undefined);
       expect(badLink.status === 404, 'Link sai phải 404');
-      const bill = await call('GET', `/api/pay/${feeBorrowId}?t=${target.payToken}`, undefined, undefined);
-      expect(bill.status === 200 && bill.data.totalFee === 12000 && !bill.data.paid && !('payToken' in bill.data) && !('userId' in bill.data) && bill.data.quantity === 1, 'Bill công khai sai');
-      const readerPay = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, reader.token);
+      const bill = await call('GET', `/api/pay/${id}?t=${target.payToken}`, undefined, undefined);
+      expect(bill.status === 200 && bill.data.payableNow === 12000 && !bill.data.paid && !('payToken' in bill.data) && !('userId' in bill.data) && bill.data.quantity === 1, 'Bill công khai sai');
+      const readerPay = await call('POST', `/api/borrows/${id}/pay`, undefined, reader.token);
       expect(readerPay.status === 403, 'Reader không được thu tiền mặt');
-      const cash = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, librarian.token);
-      expect(cash.status === 200 && cash.data.paid === true, 'Không thu được tiền');
-      const again = await call('POST', `/api/borrows/${feeBorrowId}/pay`, undefined, librarian.token);
-      expect(again.status === 409, 'Thu 2 lần phải bị chặn');
+      const cash = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(cash.status === 200 && cash.data.collected === 12000, 'Không thu được tiền');
+      const again = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(again.status === 409, 'Hết nợ thu tiếp phải bị chặn');
+      await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
     });
-    await test('Phiếu cũ chưa có giá: trả lấy theo giá sách hiện tại', async () => {
+    await test('Phiếu cũ chưa có giá: lấy theo giá sách hiện tại', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
       const id = created.data.id;
       await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
       await dbExec('UPDATE borrow_records SET rental_fee = 0 WHERE id = ?', [id]);
+      const blocked = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      expect(blocked.status === 409 && blocked.data.due === 12000, `Không chữa giá phiếu cũ: ${JSON.stringify(blocked.data)}`);
+      await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
       const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
-      expect(returned.status === 200 && returned.data.rentalFee === 12000 && returned.data.totalFee === 12000, `Không chữa giá phiếu cũ: ${JSON.stringify(returned.data)}`);
+      expect(returned.status === 200 && returned.data.rentalFee === 12000 && returned.data.paid === true, 'Trả phiếu cũ sai');
     });
-    await test('Thu trước tiền mượn khi đang mượn', async () => {
+    await test('Thu nhiều lần lũy kế, hết nợ thì thôi', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
       const id = created.data.id;
       await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
-      const prepay = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
-      expect(prepay.status === 200 && prepay.data.paidRental === true && prepay.data.paid === false, 'Không thu trước được');
+      const first = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(first.status === 200 && first.data.collected === 12000, 'Không thu được');
       const twice = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
-      expect(twice.status === 409, 'Thu trước 2 lần phải bị chặn');
+      expect(twice.status === 409, 'Hết nợ thu tiếp phải bị chặn');
       const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
-      expect(returned.status === 200 && returned.data.totalFee === 12000, 'Tổng phí sai');
-      const rest = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
-      expect(rest.status === 200 && rest.data.paid === true, 'Không thu nốt được');
+      expect(returned.status === 200 && returned.data.paid === true, 'Trả sau thu sai');
+      const after = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
+      expect(after.status === 409, 'Thu lại phải bị chặn');
     });
     await test('Bill phiếu cũ: fallback giá hiện tại, không 0đ oan', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
@@ -292,38 +311,44 @@ async function login(username, password = '123456') {
       const token = all.data.find((r) => r.id === id).payToken;
       const bill = await call('GET', `/api/pay/${id}?t=${token}`, undefined, undefined);
       expect(bill.status === 200 && bill.data.rentalFee === 12000 && bill.data.payableNow === 12000, `Bill fallback sai: ${JSON.stringify(bill.data)}`);
+      await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
       await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
     });
-    await test('Thu trước + trả đúng hạn: tự chốt, không thu lại', async () => {
+    await test('QR confirm: mở link + bấm thanh toán rồi trả', async () => {
       const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
       const id = created.data.id;
       await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
-      await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
-      const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
-      expect(returned.status === 200 && returned.data.paid === true && returned.data.totalFee === 12000, `Không tự chốt: ${JSON.stringify(returned.data)}`);
-      const again = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
-      expect(again.status === 409, 'Thu lại phải bị chặn');
-    });
-    await test('Thu trước + trả trễ: chỉ thu nốt tiền phạt', async () => {
-      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
-      const id = created.data.id;
-      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
-      await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
-      await dbExec('UPDATE borrow_records SET due_date = ? WHERE id = ?', [new Date(Date.now() - 2.5 * 86400000).toISOString(), id]);
-      const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
-      expect(returned.status === 200 && returned.data.paid === false && returned.data.totalFee === 18000, `Phí sai: ${JSON.stringify(returned.data)}`);
-      const rest = await call('POST', `/api/borrows/${id}/pay`, undefined, librarian.token);
-      expect(rest.status === 200 && rest.data.paid === true, 'Không thu nốt được');
-    });
-    await test('QR confirm: mở link + bấm thanh toán', async () => {
-      const created = await call('POST', '/api/borrows', { bookId: pricedBookId }, reader.token);
-      const id = created.data.id;
-      await call('POST', `/api/borrows/${id}/approve`, undefined, librarian.token);
-      await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
       const all = await call('GET', '/api/borrows', undefined, librarian.token);
       const token = all.data.find((r) => r.id === id).payToken;
       const done = await call('POST', `/api/pay/${id}/confirm`, { t: token }, undefined);
-      expect(done.status === 200 && done.data.paid === true, 'Xác nhận QR thất bại');
+      expect(done.status === 200 && done.data.collected === 12000, 'Xác nhận QR thất bại');
+      const done2 = await call('POST', `/api/pay/${id}/confirm`, { t: token }, undefined);
+      expect(done2.status === 200, 'Quét lại phải idempotent');
+      const returned = await call('POST', `/api/borrows/${id}/return`, undefined, librarian.token);
+      expect(returned.status === 200 && returned.data.paid === true, 'Trả sau QR sai');
+    });
+    await test('Chat: độc giả nhắn quầy thủ thư, thủ thư trả lời', async () => {
+      const badRole = await call('POST', '/api/chat', { toRole: 'READER', body: 'chào' }, reader.token);
+      expect(badRole.status === 400, 'Nhắn sai quầy phải 400');
+      const empty = await call('POST', '/api/chat', { toRole: 'LIBRARIAN', body: '  ' }, reader.token);
+      expect(empty.status === 400, 'Tin rỗng phải 400');
+      const sent = await call('POST', '/api/chat', { toRole: 'LIBRARIAN', body: 'Cho mình hỏi sách Clean Code còn không?' }, reader.token);
+      expect(sent.status === 201 && sent.data.body.includes('Clean Code'), 'Không gửi được tin');
+      const staffThreads = await call('GET', '/api/chat/threads', undefined, librarian.token);
+      const thread = staffThreads.data.find((t) => t.readerId === 1 && t.staffRole === 'LIBRARIAN');
+      expect(thread && thread.unread === 1, 'Thủ thư không thấy tin chưa đọc');
+      const unread = await call('GET', '/api/chat/unread', undefined, librarian.token);
+      expect(unread.status === 200 && unread.data.unread >= 1, 'Badge chưa đọc sai');
+      const read = await call('GET', '/api/chat/threads/1/LIBRARIAN', undefined, librarian.token);
+      expect(read.status === 200 && read.data.length === 1, 'Không đọc được thread');
+      const replied = await call('POST', '/api/chat', { toUserId: 1, body: 'Còn 5 bản nhé bạn!' }, librarian.token);
+      expect(replied.status === 200 || replied.status === 201, 'Thủ thư không trả lời được');
+      const myUnread = await call('GET', '/api/chat/unread', undefined, reader.token);
+      expect(myUnread.data.unread >= 1, 'Độc giả không thấy trả lời');
+      const mine = await call('GET', '/api/chat/threads/1/LIBRARIAN', undefined, reader.token);
+      expect(mine.status === 200 && mine.data.length === 2, 'Độc giả không đọc được trả lời');
+      const other = await call('GET', '/api/chat/threads/2/LIBRARIAN', undefined, reader.token);
+      expect(other.status === 403, 'Đọc trộm thread người khác phải 403');
     });
     await test('Hồ sơ: xem, đổi tên, đổi mật khẩu', async () => {
       const me = await call('GET', '/api/users/me', undefined, reader.token);

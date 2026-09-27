@@ -42,8 +42,9 @@ function renderBill(bill, token) {
       </div>
     </div>
     <div class="mt-2 space-y-2 text-sm">
-      <p class="flex justify-between"><span class="text-slate-400">Tiền mượn sách</span><span>${fmtVND(bill.rentalFee)}</span></p>
+      <p class="flex justify-between"><span class="text-slate-400">Tiền mượn (${bill.daysBorrowed || 0} ngày × ${fmtVND(bill.rentalFee)})</span><span>${fmtVND(bill.accruedRental)}</span></p>
       <p class="flex justify-between"><span class="text-slate-400">Phạt quá hạn</span><span>${fmtVND(bill.lateFee)}</span></p>
+      ${(Number(bill.paidAmount) || 0) > 0 ? `<p class="flex justify-between"><span class="text-slate-400">Đã thu</span><span class="text-emerald-400">−${fmtVND(bill.paidAmount)}</span></p>` : ''}
       <p class="flex justify-between border-t border-slate-700 pt-2 text-base"><span class="text-slate-300">${bill.status === 'BORROWING' ? 'Tiền mượn (thu trước)' : 'Số tiền thanh toán'}</span><b class="text-rose-500">${fmtVND(bill.payableNow)}</b></p>
     </div>
     <button id="pay-now" class="mt-6 w-full rounded-xl bg-emerald-600 px-4 py-3.5 font-bold text-white hover:bg-emerald-500">

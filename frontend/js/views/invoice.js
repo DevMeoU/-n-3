@@ -18,11 +18,13 @@ export function invoiceNo(r) {
 
 export function invoiceModal(record) {
   const r = record;
-  const rental = Number(r.rentalFee) || 0;
+  const rate = Number(r.rentalFee) || 0;
+  const days = Number(r.daysBorrowed) || 0;
+  const rental = Number(r.accruedRental ?? rate) || 0;
   const late = Number(r.lateFee) || 0;
-  const days = lateDaysOf(r);
-  const prepaid = r.paidRental ? rental : 0;
-  const due = rental + late - prepaid;
+  const lateDays = lateDaysOf(r);
+  const paid = Number(r.paidAmount) || 0;
+  const due = Math.max(0, rental + late - paid);
   const settled = r.paid || due === 0;
   const no = invoiceNo(r);
   const html = `
@@ -51,9 +53,9 @@ export function invoiceModal(record) {
           <th class="border border-slate-300 px-3 py-2 text-right">Số tiền</th>
         </tr></thead>
         <tbody>
-          <tr><td class="border border-slate-300 px-3 py-2">Tiền mượn sách</td><td class="border border-slate-300 px-3 py-2 text-right">${fmtVND(rental)}</td></tr>
-          <tr><td class="border border-slate-300 px-3 py-2">Phạt quá hạn${days > 0 ? ` (${days} ngày)` : ' (đúng hạn)'}</td><td class="border border-slate-300 px-3 py-2 text-right">${fmtVND(late)}</td></tr>
-          ${prepaid > 0 ? `<tr><td class="border border-slate-300 px-3 py-2">Đã thu trước</td><td class="border border-slate-300 px-3 py-2 text-right">−${fmtVND(prepaid)}</td></tr>` : ''}
+          <tr><td class="border border-slate-300 px-3 py-2">Tiền mượn sách (${days} ngày × ${fmtVND(rate)})</td><td class="border border-slate-300 px-3 py-2 text-right">${fmtVND(rental)}</td></tr>
+          <tr><td class="border border-slate-300 px-3 py-2">Phạt quá hạn${lateDays > 0 ? ` (${lateDays} ngày)` : ' (đúng hạn)'}</td><td class="border border-slate-300 px-3 py-2 text-right">${fmtVND(late)}</td></tr>
+          ${paid > 0 ? `<tr><td class="border border-slate-300 px-3 py-2">Đã thu</td><td class="border border-slate-300 px-3 py-2 text-right">−${fmtVND(paid)}</td></tr>` : ''}
           <tr><td class="border border-slate-300 px-3 py-2 font-bold">Còn phải thu</td><td class="border border-slate-300 px-3 py-2 text-right font-bold">${fmtVND(due)}</td></tr>
         </tbody>
       </table>

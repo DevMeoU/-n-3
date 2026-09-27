@@ -17,9 +17,11 @@ export async function dashboardView(router) {
     const borrowing = records.filter((r) => r.status === 'BORROWING');
     const pending = records.filter((r) => r.status === 'PENDING');
     const overdue = borrowing.filter((r) => r.dueDate && new Date(r.dueDate).getTime() < Date.now());
-    const unpaid = records.filter((r) => r.status === 'RETURNED' && !r.paid
-      && ((Number(r.rentalFee) || 0) + (Number(r.lateFee) || 0)) > 0);
-    const unpaidTotal = unpaid.reduce((sum, r) => sum + (Number(r.rentalFee) || 0) + (Number(r.lateFee) || 0), 0);
+    const dueOf = (r) => (typeof r.payableNow === 'number')
+      ? Math.max(0, r.payableNow)
+      : Math.max(0, (Number(r.accruedRental ?? r.rentalFee) || 0) + (Number(r.lateFee) || 0) - (Number(r.paidAmount) || 0));
+    const unpaid = records.filter((r) => (r.status === 'BORROWING' || r.status === 'RETURNED') && !r.paid && dueOf(r) > 0);
+    const unpaidTotal = unpaid.reduce((sum, r) => sum + dueOf(r), 0);
     // Top sách mượn nhiều (đếm theo phiếu BORROWING/RETURNED)
     const freq = {};
     for (const r of records) {

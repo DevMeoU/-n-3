@@ -7,6 +7,7 @@ import { usersView } from './views/users.js';
 import { payView } from './views/pay.js';
 import { dashboardView } from './views/dashboard.js';
 import { profileView } from './views/profile.js';
+import { chatView, updateChatBadge } from './views/chat.js';
 
 const router = {
   onNavigate(view) {
@@ -47,12 +48,13 @@ async function render() {
       }
     });
   }
-  if (!['dashboard', 'books', 'borrows', 'users', 'profile'].includes(state.view)) state.view = 'dashboard';
-  if (state.view === 'dashboard') return dashboardView(router);
-  if (state.view === 'books') return booksView(router);
-  if (state.view === 'borrows') return borrowsView(router);
-  if (state.view === 'profile') return profileView(router);
-  return usersView(router);
+  if (!['dashboard', 'books', 'borrows', 'users', 'profile', 'chat'].includes(state.view)) state.view = 'dashboard';
+  if (state.view === 'dashboard') return dashboardView(router).finally(updateChatBadge);
+  if (state.view === 'books') return booksView(router).finally(updateChatBadge);
+  if (state.view === 'borrows') return borrowsView(router).finally(updateChatBadge);
+  if (state.view === 'profile') return profileView(router).finally(updateChatBadge);
+  if (state.view === 'chat') return chatView(router);
+  return usersView(router).finally(updateChatBadge);
 }
 
 window.addEventListener('hashchange', () => {

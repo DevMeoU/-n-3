@@ -38,9 +38,11 @@ export function qrSvg(link) {
 
 export function paymentModal(record) {
   if (!record.payToken) return toast('Phiếu chưa có link thanh toán (chỉ có sau khi duyệt)', 'error');
-  const payable = record.status === 'BORROWING'
-    ? (Number(record.rentalFee) || 0)
-    : (record.paidRental ? (Number(record.lateFee) || 0) : (Number(record.rentalFee) || 0) + (Number(record.lateFee) || 0));
+  const rate = Number(record.rentalFee) || 0;
+  const days = Number(record.daysBorrowed) || 0;
+  const accrued = Number(record.accruedRental ?? rate) || 0;
+  const paid = Number(record.paidAmount) || 0;
+  const payable = Math.max(0, accrued + (Number(record.lateFee) || 0) - paid);
   let link = payLink(record);
   showModal(`
     <div class="flex items-center justify-between">
@@ -49,9 +51,10 @@ export function paymentModal(record) {
     </div>
     <div class="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
       <p class="flex justify-between"><span>Sách</span><b class="text-right">${esc(record.bookTitle)}</b></p>
-      <p class="flex justify-between"><span>Tiền mượn</span><b id="pay-bill-rental">${fmtVND(record.rentalFee)}</b></p>
+      <p class="flex justify-between"><span>Tiền mượn (${days} ngày × ${fmtVND(rate)})</span><b id="pay-bill-rental">${fmtVND(accrued)}</b></p>
       <p class="flex justify-between"><span>Phạt quá hạn</span><b>${fmtVND(record.lateFee)}</b></p>
-      <p class="flex justify-between border-t border-slate-200 pt-2 text-base"><span class="font-semibold">${record.status === 'BORROWING' ? 'Thu trước tiền mượn' : 'Tổng thu'}</span><b id="pay-bill-total" class="text-rose-700">${fmtVND(payable)}</b></p>
+      ${paid > 0 ? `<p class="flex justify-between text-emerald-700"><span>Đã thu</span><b>−${fmtVND(paid)}</b></p>` : ''}
+      <p class="flex justify-between border-t border-slate-200 pt-2 text-base"><span class="font-semibold">Còn phải thu</span><b id="pay-bill-total" class="text-rose-700">${fmtVND(payable)}</b></p>
     </div>
     <p class="mt-4 text-center text-sm font-medium">Độc giả quét mã QR để thanh toán (demo)</p>
     <div id="pay-qr" class="mx-auto mt-2 w-fit rounded-xl border border-slate-200 bg-white p-3"><p class="text-sm text-slate-500">Đang tạo mã QR...</p></div>
@@ -64,12 +67,12 @@ export function paymentModal(record) {
       <button data-close class="rounded-lg border border-slate-300 px-4 py-2">Đóng</button>
       ${can('LIBRARIAN', 'ADMIN') ? '<button id="pay-cash" class="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800">Đã thu tiền mặt</button>' : ''}
     </div>`, () => {
-    // Lấy bill mới nhất từ server (đã gồm fallback giá) + QR mã hóa link production
+    // Lấy bill mới nhất từ server (số ngày + đã thu mới nhất) + QR mã hóa link production
     fetch(`/api/pay/${record.id}?t=${encodeURIComponent(record.payToken)}`)
       .then((res) => res.json())
       .then((bill) => {
         if (!bill || bill.error || !document.body.contains($('#pay-bill-total'))) return;
-        $('#pay-bill-rental').textContent = fmtVND(bill.rentalFee);
+        $('#pay-bill-rental').textContent = `${fmtVND(bill.accruedRental)} (${bill.daysBorrowed} ngày)`;
         $('#pay-bill-total').textContent = fmtVND(bill.payableNow);
       })
       .catch(() => {});

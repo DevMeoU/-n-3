@@ -46,6 +46,8 @@ async function createBorrowDatabase() {
       if (!/duplicate column name/i.test(error.message)) throw error;
     }
   }
+  // Quy đổi thu trước kiểu cũ (paid_rental=1) thành số tiền đã thu ~ 1 ngày giá
+  await db.run('UPDATE borrow_records SET paid_amount = rental_fee WHERE paid_rental = 1 AND paid_amount = 0');
   return db;
 }
 
